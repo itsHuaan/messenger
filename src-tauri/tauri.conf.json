@@ -6,14 +6,7 @@
   "build": {},
   "app": {
     "withGlobalTauri": true,
-    "windows": [
-      {
-        "title": "Messenger",
-        "url": "https://www.messenger.com",
-        "width": 800,
-        "height": 600
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }
