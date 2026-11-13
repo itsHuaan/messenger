@@ -147,4 +147,147 @@ for (const msg of diverseMessages) {
 }
 console.log('✓ Passed: All diverse message formats handled gracefully');
 
+// Test 7: Muted conversation detection logic
+console.log('Test 7: Muted conversation detection');
+const MUTED_KEYWORDS = [
+  'muted',
+  'tắt thông báo',
+  'đã tắt thông báo',
+  'tắt chuông',
+  'tắt âm',
+  'silenced',
+  'notifications off',
+  'stummgeschaltet',
+  'silenciado',
+  'muet',
+  'disattivato'
+];
+
+function isMutedMock({ ariaLabel = '', childAriaLabels = [], svgPaths = [] }) {
+  const lowerAria = ariaLabel.toLowerCase();
+  for (const kw of MUTED_KEYWORDS) {
+    if (lowerAria.includes(kw)) return true;
+  }
+  for (const childAria of childAriaLabels) {
+    const l = childAria.toLowerCase();
+    for (const kw of MUTED_KEYWORDS) {
+      if (l.includes(kw)) return true;
+    }
+  }
+  for (const p of svgPaths) {
+    if (p.startsWith('M29.676') || p.includes('29.676 7.746')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+assert.strictEqual(isMutedMock({ ariaLabel: 'Work Group, Muted' }), true);
+assert.strictEqual(isMutedMock({ ariaLabel: 'Gia đình, Đã tắt thông báo' }), true);
+assert.strictEqual(isMutedMock({ childAriaLabels: ['Notifications off'] }), true);
+assert.strictEqual(isMutedMock({ svgPaths: ['M29.676 7.746c.353-.352...'] }), true);
+assert.strictEqual(isMutedMock({ ariaLabel: 'Alice Smith, 1 unread message' }), false);
+console.log('✓ Passed: Muted conversations properly identified across languages and SVG paths');
+
+// Test 8: Seen conversation suppression on app restart / virtual list mount
+console.log('Test 8: Seen conversation suppression on startup / list mount');
+function simulateConversationArrival({
+  isInitialized,
+  threadId,
+  snippet,
+  threadSnippets,
+  isUnread,
+  isMuted,
+  elapsedSinceStart,
+  gracePeriodMs = 6000
+}) {
+  if (!isInitialized) return { notified: false, reason: 'not_initialized' };
+  if (isMuted) return { notified: false, reason: 'muted' };
+  if (!snippet) return { notified: false, reason: 'empty_snippet' };
+
+  const lastSnippet = threadSnippets.get(threadId);
+
+  // If newly discovered thread during mount/scroll, record baseline only
+  if (lastSnippet === undefined) {
+    threadSnippets.set(threadId, snippet);
+    return { notified: false, reason: 'first_seen_baseline' };
+  }
+
+  // No change in snippet
+  if (lastSnippet === snippet) {
+    return { notified: false, reason: 'unchanged_snippet' };
+  }
+
+  threadSnippets.set(threadId, snippet);
+
+  // If conversation is already seen (read), never notify
+  if (!isUnread) {
+    return { notified: false, reason: 'conversation_seen_read' };
+  }
+
+  // Grace period on startup
+  if (elapsedSinceStart < gracePeriodMs) {
+    return { notified: false, reason: 'startup_grace_period' };
+  }
+
+  return { notified: true, reason: 'new_unread_message' };
+}
+
+const mockThreadSnippets = new Map();
+// 1. Initial mounting of 10 existing seen conversations on app restart
+for (let i = 1; i <= 10; i++) {
+  const result = simulateConversationArrival({
+    isInitialized: true,
+    threadId: `thread_${i}`,
+    snippet: `Hello message ${i}`,
+    threadSnippets: mockThreadSnippets,
+    isUnread: false, // Seen/read
+    isMuted: false,
+    elapsedSinceStart: 1000
+  });
+  assert.strictEqual(result.notified, false, `Thread ${i} should not notify on initial mount`);
+  assert.strictEqual(result.reason, 'first_seen_baseline');
+}
+
+// 2. An existing thread is updated with a new message, but it is MUTED
+const mutedResult = simulateConversationArrival({
+  isInitialized: true,
+  threadId: 'thread_1',
+  snippet: 'New incoming message in muted chat',
+  threadSnippets: mockThreadSnippets,
+  isUnread: true,
+  isMuted: true,
+  elapsedSinceStart: 10000
+});
+assert.strictEqual(mutedResult.notified, false, 'Muted conversation should not notify');
+assert.strictEqual(mutedResult.reason, 'muted');
+
+// 3. An existing thread has an update, but was already SEEN (read)
+const seenResult = simulateConversationArrival({
+  isInitialized: true,
+  threadId: 'thread_2',
+  snippet: 'You read this already',
+  threadSnippets: mockThreadSnippets,
+  isUnread: false,
+  isMuted: false,
+  elapsedSinceStart: 10000
+});
+assert.strictEqual(seenResult.notified, false, 'Seen conversation should not notify');
+assert.strictEqual(seenResult.reason, 'conversation_seen_read');
+
+// 4. A real new UNREAD message arrives AFTER startup grace period in an UNMUTED chat
+const realMessageResult = simulateConversationArrival({
+  isInitialized: true,
+  threadId: 'thread_3',
+  snippet: 'Hey! Are you there?',
+  threadSnippets: mockThreadSnippets,
+  isUnread: true,
+  isMuted: false,
+  elapsedSinceStart: 10000
+});
+assert.strictEqual(realMessageResult.notified, true, 'Real unread message should notify');
+assert.strictEqual(realMessageResult.reason, 'new_unread_message');
+
+console.log('✓ Passed: App restart prevents notification floods from seen and muted conversations');
+
 console.log('\nAll frontend logic tests passed successfully!');

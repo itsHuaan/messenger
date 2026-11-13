@@ -22,16 +22,26 @@ fn open_in_browser(url: &str) {
 fn is_internal_url(url: &tauri::Url) -> bool {
     let host = url.host_str().unwrap_or("");
 
-    let is_facebook =
-        host == "facebook.com" || host.ends_with(".facebook.com");
-
     let is_messenger =
         host == "messenger.com" || host.ends_with(".messenger.com");
+
+    let is_facebook_host =
+        host == "facebook.com" || host.ends_with(".facebook.com");
+
+    let is_facebook_internal = is_facebook_host
+        && (url.path().starts_with("/messages")
+            || url.path().starts_with("/login")
+            || url.path().starts_with("/checkpoint")
+            || url.path().starts_with("/auth")
+            || url.path().starts_with("/dialog")
+            || url.path().starts_with("/two_factor")
+            || url.path().starts_with("/recover")
+            || url.path().starts_with("/privacy"));
 
     let is_facebook_redirect =
         host == "l.facebook.com" && url.path().starts_with("/l.php");
 
-    (is_facebook || is_messenger) && !is_facebook_redirect
+    (is_messenger || is_facebook_internal) && !is_facebook_redirect
 }
 
 #[tauri::command]
@@ -184,6 +194,8 @@ fn main() {
             .position(338.0, 118.0)
             .inner_size(1244.0, 797.0)
             .min_inner_size(605.0, 800.0)
+            .disable_drag_drop_handler()
+            .additional_browser_args("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-renderer-backgrounding --disable-background-timer-throttling")
             .initialization_script(include_str!("inject.js"))
 
             // Handle normal navigation

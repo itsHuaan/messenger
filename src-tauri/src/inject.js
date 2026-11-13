@@ -1,6 +1,11 @@
 (() => {
   'use strict';
 
+  // Only run in the top-level window (never inside background/tracking iframes)
+  if (window.top !== window) {
+    return;
+  }
+
   // Prevent multiple executions in the same document
   if (window.__MESSENGER_DESKTOP_INITIALIZED__) {
     return;
@@ -51,6 +56,22 @@
       '[data-testid*="unread" i]'
     ].join(','),
 
+    // Muted conversation indicators (SVG bell-slash, aria-labels, testids)
+    muteIndicator: [
+      '[aria-label*="muted" i]',
+      '[aria-label*="tắt thông báo" i]',
+      '[aria-label*="đã tắt thông báo" i]',
+      '[aria-label*="tắt chuông" i]',
+      '[aria-label*="tắt âm" i]',
+      '[aria-label*="notifications off" i]',
+      '[aria-label*="silenced" i]',
+      '[title*="muted" i]',
+      '[title*="tắt thông báo" i]',
+      '[data-testid*="mute" i]',
+      'path[d^="M29.676"]',
+      'path[d*="29.676 7.746"]'
+    ].join(','),
+
     // Active conversation message container
     activeMessageContainer: 'div[role="main"]',
 
@@ -71,6 +92,21 @@
     // Send button
     sendButton: '[aria-label*="Send" i], [aria-label*="Gửi" i], button[type="submit"]'
   };
+
+  // Keywords indicating muted conversations across multiple languages
+  const MUTED_KEYWORDS = [
+    'muted',
+    'tắt thông báo',
+    'đã tắt thông báo',
+    'tắt chuông',
+    'tắt âm',
+    'silenced',
+    'notifications off',
+    'stummgeschaltet',
+    'silenciado',
+    'muet',
+    'disattivato'
+  ];
 
   // Prefixes indicating outgoing messages across common languages
   const OUTGOING_PREFIXES = [
@@ -109,30 +145,76 @@
   // seenSignatures: signatures of notifications already fired (bounded, persists across nav)
   const seenSignatures = new BoundedCache(300);
 
-  // threadSnippets: baseline snapshot of snippets per thread (populated during init scan)
+  // threadSnippets: baseline snapshot of snippets per thread
   // Maps threadId -> snippet text at initialization time (or last seen)
   const threadSnippets = new Map();
+
+  // Set of known muted thread IDs
+  const mutedThreadIds = new Set();
+
+  // Persistent storage to retain seen snippets across app restarts
+  const STORAGE_KEY_SEEN = 'messenger_desktop_seen_snippets';
+
+  function loadPersistedSnippets() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_SEEN);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        for (const [id, snip] of Object.entries(parsed)) {
+          threadSnippets.set(id, snip);
+        }
+        console.log(`[Messenger Desktop] Loaded ${Object.keys(parsed).length} persisted thread snippet(s).`);
+      }
+    } catch (e) {
+      console.warn('[Messenger Desktop] Could not load persisted snippets:', e);
+    }
+  }
+
+  function savePersistedSnippets() {
+    try {
+      const obj = {};
+      let count = 0;
+      for (const [id, snip] of threadSnippets.entries()) {
+        obj[id] = snip;
+        count++;
+        if (count >= 200) break;
+      }
+      localStorage.setItem(STORAGE_KEY_SEEN, JSON.stringify(obj));
+    } catch {}
+  }
+
+  // Populate known snippets immediately from localStorage
+  loadPersistedSnippets();
+
+  // Grace period tracking: suppress toast notifications on launch to prevent historical bursts
+  const appStartTime = Date.now();
+  const STARTUP_GRACE_PERIOD_MS = 6000;
 
   // ==========================================
   // Initialization Lifecycle
   // ==========================================
-  // Phase 1: Scan – capture baseline, do not fire notifications
-  // Phase 2: Live – fire notifications for snippet changes only
   let isInitialized = false;
 
   // Build a stable baseline from currently visible conversation list items.
-  // Returns the number of threads snapshotted.
   function buildBaseline() {
     const items = document.querySelectorAll(SELECTORS.conversationItem);
     let count = 0;
     for (const item of items) {
       const threadId = extractThreadId(item);
       if (!threadId) continue;
+
+      if (isConversationMuted(item)) {
+        mutedThreadIds.add(threadId);
+      } else {
+        mutedThreadIds.delete(threadId);
+      }
+
       const snippet = extractSnippet(item);
       threadSnippets.set(threadId, snippet);
       count++;
     }
-    console.log(`[Messenger Desktop] Baseline built: ${count} thread(s) snapshotted.`);
+    savePersistedSnippets();
+    console.log(`[Messenger Desktop] Baseline built: ${count} thread(s) snapshotted (${mutedThreadIds.size} muted).`);
     return count;
   }
 
@@ -251,6 +333,80 @@
     return false;
   }
 
+  function isConversationMuted(item) {
+    if (!item) return false;
+
+    // 1. Check aria-label on the item itself
+    const itemAria = (item.getAttribute('aria-label') || '').toLowerCase();
+    for (const kw of MUTED_KEYWORDS) {
+      if (itemAria.includes(kw)) {
+        return true;
+      }
+    }
+
+    // 2. Check child selectors for mute indicators
+    if (item.querySelector(SELECTORS.muteIndicator)) {
+      return true;
+    }
+
+    // 3. Check inline SVGs for bell slash or mute icon patterns
+    const svgs = item.querySelectorAll('svg');
+    for (const svg of svgs) {
+      const svgAria = (svg.getAttribute('aria-label') || '').toLowerCase();
+      for (const kw of MUTED_KEYWORDS) {
+        if (svgAria.includes(kw)) return true;
+      }
+      const paths = svg.querySelectorAll('path');
+      for (const p of paths) {
+        const d = p.getAttribute('d') || '';
+        if (d.startsWith('M29.676') || d.includes('29.676 7.746')) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  function isConversationUnread(item) {
+    if (!item) return false;
+
+    // 1. Explicit unread indicators
+    const unreadDot = item.querySelector(SELECTORS.unreadIndicator);
+    if (unreadDot) return true;
+
+    // 2. Item's aria-label
+    const itemAria = (item.getAttribute('aria-label') || '').toLowerCase();
+    if (itemAria.includes('unread') || itemAria.includes('chưa đọc')) return true;
+
+    // 3. Bold font-weight on message preview snippet
+    const snippetEl = item.querySelector(SELECTORS.snippetElement);
+    if (snippetEl) {
+      const style = window.getComputedStyle(snippetEl);
+      const weight = parseInt(style.fontWeight, 10);
+      if (weight >= 600 || style.fontWeight === 'bold') return true;
+    }
+
+    return false;
+  }
+
+  function isCurrentConversationMuted(activeThreadId) {
+    if (activeThreadId && mutedThreadIds.has(activeThreadId)) {
+      return true;
+    }
+    const header = document.querySelector('header, div[role="main"] header, [role="main"]');
+    if (header) {
+      const headerAria = (header.getAttribute('aria-label') || '').toLowerCase();
+      for (const kw of MUTED_KEYWORDS) {
+        if (headerAria.includes(kw)) return true;
+      }
+      if (header.querySelector(SELECTORS.muteIndicator)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   // ==========================================
   // Incoming Message Detection
   // ==========================================
@@ -260,20 +416,46 @@
     const threadId = extractThreadId(item);
     if (!threadId) return;
 
+    // Check and track muted state
+    if (isConversationMuted(item)) {
+      mutedThreadIds.add(threadId);
+      return; // Never fire notifications for muted conversations
+    } else {
+      mutedThreadIds.delete(threadId);
+    }
+
     const snippet = extractSnippet(item);
+    if (!snippet) return; // Empty snippet is not a new message (virtualized list clearing)
+
     const lastSnippet = threadSnippets.get(threadId);
+
+    // If this thread was never seen before in our map (e.g. newly mounted row from scroll):
+    // Record it as baseline. DO NOT fire a notification on initial discovery of an existing thread!
+    if (lastSnippet === undefined) {
+      threadSnippets.set(threadId, snippet);
+      savePersistedSnippets();
+      return;
+    }
 
     // No change from baseline/last-seen → no new message
     if (lastSnippet === snippet) return;
 
     // Update stored snippet immediately to prevent duplicate firing
     threadSnippets.set(threadId, snippet);
+    savePersistedSnippets();
+
+    // CRITICAL: If the conversation is NOT unread (i.e. seen / read), DO NOT NOTIFY!
+    if (!isConversationUnread(item)) {
+      return;
+    }
+
+    // During startup grace period, do not fire toast notifications for pre-existing messages
+    if (Date.now() - appStartTime < STARTUP_GRACE_PERIOD_MS) {
+      return;
+    }
 
     // Outgoing messages don't trigger notifications
     if (isOutgoingText(snippet)) return;
-
-    // Empty snippet is not a new message (virtualized list clearing)
-    if (!snippet) return;
 
     // Generate unique signature for deduplication across observer firings
     const senderName = extractSenderName(item);
@@ -304,11 +486,18 @@
   // Check active chat message stream for incoming messages when app is unfocused
   function checkActiveConversationStream() {
     if (!isInitialized) return;
+    if (Date.now() - appStartTime < STARTUP_GRACE_PERIOD_MS) return;
+
     const isWindowFocused = document.hasFocus() && !document.hidden;
     if (isWindowFocused) return; // only needed when unfocused
 
     const activeThreadId = getActiveThreadIdFromUrl();
     if (!activeThreadId) return;
+
+    if (isCurrentConversationMuted(activeThreadId)) {
+      mutedThreadIds.add(activeThreadId);
+      return;
+    }
 
     const mainArea = document.querySelector(SELECTORS.activeMessageContainer);
     if (!mainArea) return;
@@ -369,6 +558,13 @@
     let countedRows = 0;
 
     for (const item of items) {
+      // Muted conversations should not count towards unread badge
+      if (isConversationMuted(item)) {
+        const tid = extractThreadId(item);
+        if (tid) mutedThreadIds.add(tid);
+        continue;
+      }
+
       let isUnread = false;
 
       const unreadDot = item.querySelector(SELECTORS.unreadIndicator);
@@ -559,13 +755,20 @@
           link.click();
           return;
         }
+        item.click();
+        return;
       }
     }
 
-    // Fallback: direct URL navigation
+    // Fallback: SPA navigation without full page reload
     const currentPath = window.location.pathname;
     if (!currentPath.includes(threadId)) {
-      window.location.href = `https://www.messenger.com/t/${threadId}`;
+      try {
+        window.history.pushState(null, '', `/t/${threadId}`);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      } catch {
+        window.location.href = `https://www.messenger.com/t/${threadId}`;
+      }
     }
   };
 
@@ -951,92 +1154,29 @@
   // Drag-and-Drop File Upload Support
   // ==========================================
   function setupDragAndDrop() {
-    let dragCounter = 0;
-
-    // Create an overlay indicator to show drop target state
-    const dropOverlay = document.createElement('div');
-    dropOverlay.id = 'md-drop-overlay';
-    dropOverlay.style.cssText = `
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      background: rgba(0, 132, 255, 0.15);
-      border: 3px dashed #0084ff;
-      box-sizing: border-box;
-      z-index: 999998;
-      pointer-events: none;
-      align-items: center;
-      justify-content: center;
-      color: #0084ff;
-      font-size: 20px;
-      font-weight: 600;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    `;
-    dropOverlay.innerHTML = '<div style="background: rgba(0,0,0,0.7); padding: 16px 28px; border-radius: 12px; pointer-events: none;">Drop files to send in Messenger</div>';
-
-    document.body.appendChild(dropOverlay);
-
-    window.addEventListener('dragenter', e => {
-      // Check if files are being dragged
-      if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')) {
-        dragCounter++;
-        dropOverlay.style.display = 'flex';
-      }
-    });
-
-    window.addEventListener('dragleave', e => {
-      dragCounter--;
-      if (dragCounter <= 0) {
-        dragCounter = 0;
-        dropOverlay.style.display = 'none';
-      }
-    });
-
+    // Ensure Windows Explorer file dragging displays a copy cursor over the webview
     window.addEventListener('dragover', e => {
       if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')) {
-        e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
       }
     });
 
+    // Support dropping files anywhere on the Messenger window
     window.addEventListener('drop', e => {
-      dragCounter = 0;
-      dropOverlay.style.display = 'none';
-
       const files = e.dataTransfer && e.dataTransfer.files;
       if (!files || files.length === 0) return;
 
-      // Find file input or chat composer in Messenger
-      // Messenger typically has hidden file inputs (e.g., input[type="file"][accept*="*"])
-      // for attachments or accepts drop events on the main chat area or composer
-      const composer = document.querySelector(SELECTORS.messageComposer);
-      const fileInput = document.querySelector('input[type="file"][accept*="image"], input[type="file"]');
       const mainChat = document.querySelector(SELECTORS.activeMessageContainer);
+      const composer = document.querySelector(SELECTORS.messageComposer);
+      const target = composer || mainChat;
 
-      if (fileInput) {
-        // If file input exists, assign files to it and trigger change event
-        try {
-          const dataTransfer = new DataTransfer();
-          for (let i = 0; i < files.length; i++) {
-            dataTransfer.items.add(files[i]);
-          }
-          fileInput.files = dataTransfer.files;
-          fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-          console.log(`[Messenger Desktop] Dispatched ${files.length} file(s) to Messenger file input`);
-          e.preventDefault();
-          return;
-        } catch (err) {
-          console.warn('[Messenger Desktop] Could not assign DataTransfer to file input:', err);
-        }
+      // If dropped directly onto the chat conversation or composer, Messenger's native drop zone handles it
+      if (e.target && (e.target === target || (target && target.contains(e.target)))) {
+        return;
       }
 
-      // If targeted drop on main area or composer
-      const target = composer || mainChat;
-      if (target && target !== e.target && !target.contains(e.target)) {
-        // Re-dispatch synthetic drop event to composer or main chat area
+      // If dropped outside the active chat area (e.g. on sidebar or header), forward to the active chat
+      if (target) {
         try {
           const dropEvt = new DragEvent('drop', {
             bubbles: true,
@@ -1044,10 +1184,9 @@
             dataTransfer: e.dataTransfer
           });
           target.dispatchEvent(dropEvt);
-          console.log('[Messenger Desktop] Forwarded drop event to chat composer/container');
-          e.preventDefault();
+          console.log('[Messenger Desktop] Forwarded dropped files to active chat area');
         } catch (err) {
-          console.warn('[Messenger Desktop] Error forwarding drop event:', err);
+          console.warn('[Messenger Desktop] Could not forward drop event:', err);
         }
       }
     });
