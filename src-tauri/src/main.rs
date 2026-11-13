@@ -1,3 +1,5 @@
+// Prevents the console window from appearing in Windows release builds.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn open_in_browser(url: &str) {
     if let Err(e) = tauri_plugin_opener::open_url(url, None::<&str>) {
