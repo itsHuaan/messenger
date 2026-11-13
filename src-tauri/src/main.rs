@@ -183,6 +183,7 @@ fn main() {
             .title("Messenger")
             .position(338.0, 118.0)
             .inner_size(1244.0, 797.0)
+            .min_inner_size(605.0, 800.0)
             .initialization_script(include_str!("inject.js"))
 
             // Handle normal navigation
