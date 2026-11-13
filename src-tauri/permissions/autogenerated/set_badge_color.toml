@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-badge-color"
+description = "Enables the set_badge_color command without any pre-configured scope."
+commands.allow = ["set_badge_color"]
+
+[[permission]]
+identifier = "deny-set-badge-color"
+description = "Denies the set_badge_color command without any pre-configured scope."
+commands.deny = ["set_badge_color"]

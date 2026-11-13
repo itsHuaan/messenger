@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-hide-message-content"
+description = "Enables the set_hide_message_content command without any pre-configured scope."
+commands.allow = ["set_hide_message_content"]
+
+[[permission]]
+identifier = "deny-set-hide-message-content"
+description = "Denies the set_hide_message_content command without any pre-configured scope."
+commands.deny = ["set_hide_message_content"]

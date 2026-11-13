@@ -3,8 +3,23 @@
   "identifier": "default",
   "description": "Capability for the main window",
   "windows": ["main"],
+  "remote": {
+    "urls": [
+      "https://*.messenger.com/*",
+      "https://messenger.com/*",
+      "https://*.facebook.com/*"
+    ]
+  },
   "permissions": [
     "core:default",
-    "opener:default"
+    "opener:default",
+    "notification:default",
+    "allow-notify-message",
+    "allow-update-unread-badge",
+    "allow-get-settings",
+    "allow-set-notifications-enabled",
+    "allow-set-badge-enabled",
+    "allow-set-hide-message-content",
+    "allow-set-badge-color"
   ]
 }
