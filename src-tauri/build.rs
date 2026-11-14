@@ -8,6 +8,7 @@ fn main() {
             "set_badge_enabled",
             "set_hide_message_content",
             "set_badge_color",
+            "set_run_at_startup",
             "check_for_updates",
             "download_update",
             "install_and_restart",

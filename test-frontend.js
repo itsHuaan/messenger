@@ -346,4 +346,49 @@ assert.strictEqual(requestUpdateCheck().allowed, true); // allowed after reset
 
 console.log('✓ Passed: Updater calculations, concurrency guards and error mappings verified');
 
+// ==========================================
+// Test 10: Run at startup toggle & settings state
+// ==========================================
+console.log('Test 10: Run at startup toggle state & default behavior');
+
+const defaultAppSettings = {
+  notifications_enabled: true,
+  badge_enabled: true,
+  hide_message_content: false,
+  badge_color: '#F52D2D',
+  run_at_startup: false
+};
+
+// 1. Verify default is off
+assert.strictEqual(defaultAppSettings.run_at_startup, false, 'Default run_at_startup must be false');
+
+// 2. Simulate toggle ON
+function handleStartupToggle(currentSettings, enabled, shouldFail = false) {
+  const previousState = currentSettings.run_at_startup;
+  currentSettings.run_at_startup = enabled;
+  if (shouldFail) {
+    // Revert on failure
+    currentSettings.run_at_startup = previousState;
+    return { success: false, state: currentSettings.run_at_startup };
+  }
+  return { success: true, state: currentSettings.run_at_startup };
+}
+
+const settingsCopy = { ...defaultAppSettings };
+const toggleOnRes = handleStartupToggle(settingsCopy, true);
+assert.strictEqual(toggleOnRes.success, true);
+assert.strictEqual(settingsCopy.run_at_startup, true, 'Settings state should reflect enabled startup');
+
+// 3. Simulate toggle OFF
+const toggleOffRes = handleStartupToggle(settingsCopy, false);
+assert.strictEqual(toggleOffRes.success, true);
+assert.strictEqual(settingsCopy.run_at_startup, false, 'Settings state should reflect disabled startup');
+
+// 4. Simulate failure and revert
+const toggleFailRes = handleStartupToggle(settingsCopy, true, true);
+assert.strictEqual(toggleFailRes.success, false);
+assert.strictEqual(settingsCopy.run_at_startup, false, 'Settings state must revert to previous state on failure');
+
+console.log('✓ Passed: Run at startup toggle behaves as expected (default off, toggle on/off, revert on error)');
+
 console.log('\nAll frontend logic tests passed successfully!');

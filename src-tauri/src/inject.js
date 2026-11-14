@@ -239,7 +239,8 @@
     notifications_enabled: true,
     badge_enabled: true,
     hide_message_content: false,
-    badge_color: '#F52D2D'
+    badge_color: '#F52D2D',
+    run_at_startup: false
   };
 
   // ==========================================
@@ -1098,6 +1099,16 @@
         </div>
         <div class="md-row">
           <div>
+            <div class="md-label">Run at startup</div>
+            <div class="md-sublabel">Launch Messenger automatically when Windows starts</div>
+          </div>
+          <label class="md-switch">
+            <input type="checkbox" id="md-toggle-startup">
+            <span class="md-slider"></span>
+          </label>
+        </div>
+        <div class="md-row">
+          <div>
             <div class="md-label">Unread badge color</div>
             <div class="md-sublabel">Color of the taskbar notification dot</div>
           </div>
@@ -1155,6 +1166,7 @@
       document.getElementById('md-toggle-notifications').checked = !!appSettings.notifications_enabled;
       document.getElementById('md-toggle-badge').checked = !!appSettings.badge_enabled;
       document.getElementById('md-toggle-hide-content').checked = !!appSettings.hide_message_content;
+      document.getElementById('md-toggle-startup').checked = !!appSettings.run_at_startup;
       document.getElementById('md-badge-color').value = appSettings.badge_color || '#F52D2D';
 
       // Query version and last check time
@@ -1206,6 +1218,18 @@
       const enabled = e.target.checked;
       appSettings.hide_message_content = enabled;
       invoke('set_hide_message_content', { enabled }).catch(console.error);
+    });
+
+    // Toggle: Run at startup
+    document.getElementById('md-toggle-startup').addEventListener('change', e => {
+      const enabled = e.target.checked;
+      appSettings.run_at_startup = enabled;
+      invoke('set_run_at_startup', { enabled }).catch(err => {
+        console.error('[Messenger Desktop] Error setting run at startup:', err);
+        // Revert switch on error
+        e.target.checked = !enabled;
+        appSettings.run_at_startup = !enabled;
+      });
     });
 
     // Badge color picker

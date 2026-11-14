@@ -18,6 +18,8 @@ pub struct AppSettings {
     pub badge_color: String,
     #[serde(default)]
     pub last_update_check: Option<String>,
+    #[serde(default)]
+    pub run_at_startup: bool,
 }
 
 impl Default for AppSettings {
@@ -28,6 +30,7 @@ impl Default for AppSettings {
             hide_message_content: false,
             badge_color: default_badge_color(),
             last_update_check: None,
+            run_at_startup: false,
         }
     }
 }
@@ -78,6 +81,7 @@ mod tests {
         assert!(!settings.hide_message_content);
         assert_eq!(settings.badge_color, "#F52D2D");
         assert!(settings.last_update_check.is_none());
+        assert!(!settings.run_at_startup, "Default run_at_startup must be false (off)");
     }
 
     #[test]
@@ -88,6 +92,7 @@ mod tests {
             hide_message_content: true,
             badge_color: "#00AAFF".to_string(),
             last_update_check: Some("2026-11-14 13:00:00 UTC".to_string()),
+            run_at_startup: true,
         };
         let serialized = serde_json::to_string(&original).expect("Serialization failed");
         let deserialized: AppSettings =
@@ -104,6 +109,7 @@ mod tests {
         );
         assert_eq!(original.badge_color, deserialized.badge_color);
         assert_eq!(original.last_update_check, deserialized.last_update_check);
+        assert_eq!(original.run_at_startup, deserialized.run_at_startup);
     }
 
     #[test]
@@ -115,5 +121,6 @@ mod tests {
         assert!(!deserialized.badge_enabled);
         assert!(!deserialized.hide_message_content);
         assert_eq!(deserialized.badge_color, "#F52D2D");
+        assert!(!deserialized.run_at_startup, "Missing run_at_startup must default to false");
     }
 }

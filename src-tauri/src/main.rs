@@ -4,6 +4,7 @@
 mod badge;
 mod notification;
 mod settings;
+mod startup;
 mod updater;
 
 use settings::AppSettings;
@@ -151,6 +152,18 @@ fn set_badge_color(app: tauri::AppHandle, color: String) -> Result<AppSettings, 
     Ok(settings.clone())
 }
 
+#[tauri::command]
+fn set_run_at_startup(app: tauri::AppHandle, enabled: bool) -> Result<AppSettings, String> {
+    startup::set_run_at_startup(enabled)?;
+
+    let state = app.state::<AppState>();
+    let mut settings = state.settings.lock().map_err(|e| e.to_string())?;
+    settings.run_at_startup = enabled;
+    settings::save_settings(&app, &settings)?;
+    println!("[Messenger Desktop] Run at startup set to: {enabled}");
+    Ok(settings.clone())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -167,6 +180,11 @@ fn main() {
             notification::register_app_identity(app.handle());
 
             let initial_settings = settings::load_settings(app.handle());
+            if initial_settings.run_at_startup {
+                if let Err(e) = startup::set_run_at_startup(true) {
+                    eprintln!("[Messenger Desktop] Failed to sync startup registry key: {e}");
+                }
+            }
             app.manage(AppState {
                 settings: Mutex::new(initial_settings),
             });
@@ -215,6 +233,7 @@ fn main() {
             set_badge_enabled,
             set_hide_message_content,
             set_badge_color,
+            set_run_at_startup,
             updater::check_for_updates,
             updater::download_update,
             updater::install_and_restart,
