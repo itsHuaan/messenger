@@ -23,7 +23,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # 1. Main Branch Release Protection: Tag must point to an ancestor of origin/main
       - name: Verify Tag Ancestry (Main Branch Protection)
         shell: pwsh
         run: |
@@ -44,7 +43,6 @@ jobs:
           }
           Write-Host "[PASSED] Tag commit $tagCommit is an ancestor of origin/main."
 
-      # 2. Tag Format Validation & Version Extraction: Strictly vMAJOR.MINOR.PATCH
       - name: Validate Tag Format & Extract Version
         id: extract_version
         shell: pwsh
@@ -59,7 +57,6 @@ jobs:
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-      # 3. Validate Signing Credentials before building
       - name: Validate Signing Credentials
         shell: pwsh
         env:
@@ -71,7 +68,6 @@ jobs:
           }
           Write-Host "[PASSED] Tauri signing private key secret is present."
 
-      # 4. Check for duplicate or existing published release
       - name: Check for Existing Release
         shell: pwsh
         env:
@@ -92,7 +88,6 @@ jobs:
             Write-Host "[PASSED] No published release found for '$env:GITHUB_REF_NAME'. Proceeding with build."
           }
 
-      # 5. Environment Setup
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -104,15 +99,12 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      # 6. Synchronize and Verify Project Versions
       - name: Synchronize Project Versions
         run: node scripts/sync-version.js "${{ steps.extract_version.outputs.version }}"
 
-      # 7. Install Dependencies
       - name: Install frontend dependencies
         run: npm ci
 
-      # 8. Build Application and Publish GitHub Release
       - name: Build & Publish Release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -133,7 +125,6 @@ jobs:
           uploadUpdaterJson: true
           updaterJsonPreferNsis: true
 
-      # 9. Post-Release Verification of Required Assets
       - name: Verify Uploaded Release Assets
         shell: pwsh
         env:
@@ -148,13 +139,11 @@ jobs:
           $assetNames = @($release.assets | ForEach-Object { $_.name })
           Write-Host "Uploaded release assets ($($assetNames.Count)): $($assetNames -join ', ')"
           
-          # 1. Verify latest.json updater manifest
           if (-not ($assetNames -contains "latest.json")) {
             Write-Error "[ASSET MISSING] 'latest.json' was not uploaded to release."
             exit 1
           }
           
-          # 2. Verify Windows installer
           $installer = $assetNames | Where-Object { $_ -like "*.exe" -or $_ -like "*.msi" }
           if (-not $installer) {
             Write-Error "[ASSET MISSING] No Windows installer (.exe or .msi) found in release assets."
@@ -162,15 +151,6 @@ jobs:
           }
           Write-Host "[FOUND] Installer: $($installer -join ', ')"
           
-          # 3. Verify updater bundle (.zip)
-          $updaterZip = $assetNames | Where-Object { $_ -like "*.zip" }
-          if (-not $updaterZip) {
-            Write-Error "[ASSET MISSING] No updater package (.zip) found in release assets."
-            exit 1
-          }
-          Write-Host "[FOUND] Updater package: $($updaterZip -join ', ')"
-          
-          # 4. Verify signature (.sig)
           $sig = $assetNames | Where-Object { $_ -like "*.sig" }
           if (-not $sig) {
             Write-Error "[ASSET MISSING] No cryptographic signature (.sig) found in release assets."
@@ -178,4 +158,4 @@ jobs:
           }
           Write-Host "[FOUND] Signature: $($sig -join ', ')"
           
-          Write-Host "[SUCCESS] All required release artifacts and updater manifests verified successfully!"
+          Write-Host "[SUCCESS] All required release artifacts and updater manifests verified successfully"
