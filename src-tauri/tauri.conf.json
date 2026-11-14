@@ -26,7 +26,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU3N0Y5Q0JBQzdBMzgzNEYKUldSUGc2UEh1cHgvNTg0bGZ6Z3htWTAzUDZ4dWRRelRWbDY1Nk81dUQwc3hMMUtvWWx4cTBRak0K",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDA4RkNCODdGNUIwMERDNEQKUldSTjNBQmJmN2o4Q0d1Q09WWVdPdWRDTGdFWDFRa05RMlFUanE3STAyZllMZUZGaDZQd0xMUFgK",
       "endpoints": [
         "https://github.com/itsHuaan/messenger/releases/latest/download/latest.json"
       ]
