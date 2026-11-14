@@ -197,7 +197,10 @@ mod tests {
                     break;
                 }
             }
-            assert!(has_white_pixel, "Badge for count {n} should contain white glyph pixels");
+            assert!(
+                has_white_pixel,
+                "Badge for count {n} should contain white glyph pixels"
+            );
         }
     }
 
@@ -215,6 +218,9 @@ mod tests {
                 white_pixel_count += 1;
             }
         }
-        assert!(white_pixel_count >= 10, "9+ should contain multiple white glyph pixels");
+        assert!(
+            white_pixel_count >= 10,
+            "9+ should contain multiple white glyph pixels"
+        );
     }
 }

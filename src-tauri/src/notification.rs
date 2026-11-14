@@ -1,15 +1,15 @@
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
-use windows::core::{w, HSTRING, Interface};
 use windows::Data::Xml::Dom::XmlDocument;
 use windows::Foundation::TypedEventHandler;
 use windows::UI::Notifications::{
     ToastActivatedEventArgs, ToastNotification, ToastNotificationManager,
 };
 use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
-use winreg::enums::HKEY_CURRENT_USER;
+use windows::core::{HSTRING, Interface, w};
 use winreg::RegKey;
+use winreg::enums::HKEY_CURRENT_USER;
 
 pub const APP_ID: &str = "com.itshuaan.messenger";
 pub const APP_NAME: &str = "Messenger";
@@ -123,7 +123,9 @@ fn create_start_menu_shortcut(app: &AppHandle) {
 
     let icon_path = get_icon_path(app).unwrap_or_else(|| current_exe.clone());
     let icon_path_str = icon_path.display().to_string();
-    let clean_icon_str = icon_path_str.strip_prefix(r"\\?\").unwrap_or(&icon_path_str);
+    let clean_icon_str = icon_path_str
+        .strip_prefix(r"\\?\")
+        .unwrap_or(&icon_path_str);
     let icon_str = clean_icon_str.to_string();
 
     let ps_command = format!(

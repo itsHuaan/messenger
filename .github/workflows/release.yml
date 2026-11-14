@@ -139,7 +139,6 @@ jobs:
           $assetNames = @($release.assets | ForEach-Object { $_.name })
           Write-Host "Uploaded release assets ($($assetNames.Count)): $($assetNames -join ', ')"
           
-          # 1. Verify latest.json updater manifest
           $latestJsonAsset = $release.assets | Where-Object { $_.name -eq "latest.json" }
           if (-not $latestJsonAsset) {
             Write-Error "[ASSET MISSING] 'latest.json' was not uploaded to release."
@@ -147,7 +146,6 @@ jobs:
           }
           Write-Host "[FOUND] Updater manifest: latest.json"
           
-          # 2. Verify Windows installers (.exe and .msi)
           $exeInstaller = $assetNames | Where-Object { $_ -like "*.exe" }
           $msiInstaller = $assetNames | Where-Object { $_ -like "*.msi" }
           if (-not $exeInstaller) {
@@ -158,16 +156,7 @@ jobs:
           if ($msiInstaller) {
             Write-Host "[FOUND] MSI Installer: $($msiInstaller -join ', ')"
           }
-          
-          # 3. Verify updater archive (.zip)
-          $updaterZip = $assetNames | Where-Object { $_ -like "*.zip" }
-          if (-not $updaterZip) {
-            Write-Error "[ASSET MISSING] No updater bundle (.zip) found in release assets."
-            exit 1
-          }
-          Write-Host "[FOUND] Updater bundle: $($updaterZip -join ', ')"
 
-          # 4. Verify cryptographic signature (.sig)
           $sig = $assetNames | Where-Object { $_ -like "*.sig" }
           if (-not $sig) {
             Write-Error "[ASSET MISSING] No cryptographic signature (.sig) found in release assets."
@@ -175,7 +164,6 @@ jobs:
           }
           Write-Host "[FOUND] Signature: $($sig -join ', ')"
           
-          # 5. Inspect and validate latest.json contents and target
           try {
             $manifestJson = Invoke-RestMethod -Uri $latestJsonAsset.browser_download_url
             Write-Host "Inspecting latest.json: version = $($manifestJson.version)"

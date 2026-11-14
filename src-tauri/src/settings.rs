@@ -39,8 +39,7 @@ pub fn get_settings_path(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("Failed to get app config dir: {e}"))?;
 
     if !config_dir.exists() {
-        fs::create_dir_all(&config_dir)
-            .map_err(|e| format!("Failed to create config dir: {e}"))?;
+        fs::create_dir_all(&config_dir).map_err(|e| format!("Failed to create config dir: {e}"))?;
     }
 
     Ok(config_dir.join("settings.json"))
@@ -94,9 +93,15 @@ mod tests {
         let deserialized: AppSettings =
             serde_json::from_str(&serialized).expect("Deserialization failed");
 
-        assert_eq!(original.notifications_enabled, deserialized.notifications_enabled);
+        assert_eq!(
+            original.notifications_enabled,
+            deserialized.notifications_enabled
+        );
         assert_eq!(original.badge_enabled, deserialized.badge_enabled);
-        assert_eq!(original.hide_message_content, deserialized.hide_message_content);
+        assert_eq!(
+            original.hide_message_content,
+            deserialized.hide_message_content
+        );
         assert_eq!(original.badge_color, deserialized.badge_color);
         assert_eq!(original.last_update_check, deserialized.last_update_check);
     }

@@ -7,7 +7,9 @@ use tauri_plugin_updater::UpdaterExt;
 /// Generates a clean UTC ISO-style timestamp using only standard library
 pub fn current_timestamp() -> String {
     let now = std::time::SystemTime::now();
-    let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    let duration = now
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
     let secs = duration.as_secs();
 
     let days = secs / 86400;
@@ -197,7 +199,7 @@ pub async fn download_update(app: AppHandle) -> Result<String, String> {
                 return Err(
                     "No pending update available to download. Please check for updates first."
                         .to_string(),
-                )
+                );
             }
         }
     };

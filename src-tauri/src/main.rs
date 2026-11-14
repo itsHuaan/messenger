@@ -23,11 +23,9 @@ fn open_in_browser(url: &str) {
 fn is_internal_url(url: &tauri::Url) -> bool {
     let host = url.host_str().unwrap_or("");
 
-    let is_messenger =
-        host == "messenger.com" || host.ends_with(".messenger.com");
+    let is_messenger = host == "messenger.com" || host.ends_with(".messenger.com");
 
-    let is_facebook_host =
-        host == "facebook.com" || host.ends_with(".facebook.com");
+    let is_facebook_host = host == "facebook.com" || host.ends_with(".facebook.com");
 
     let is_facebook_internal = is_facebook_host
         && (url.path().starts_with("/messages")
@@ -39,8 +37,7 @@ fn is_internal_url(url: &tauri::Url) -> bool {
             || url.path().starts_with("/recover")
             || url.path().starts_with("/privacy"));
 
-    let is_facebook_redirect =
-        host == "l.facebook.com" && url.path().starts_with("/l.php");
+    let is_facebook_redirect = host == "l.facebook.com" && url.path().starts_with("/l.php");
 
     (is_messenger || is_facebook_internal) && !is_facebook_redirect
 }
@@ -71,22 +68,13 @@ fn notify_message(
         println!("[Messenger Desktop] Toast notification requested");
     }
 
-    notification::show_toast(
-        &app,
-        &title,
-        &display_body,
-        conversation_id.as_deref(),
-    )?;
+    notification::show_toast(&app, &title, &display_body, conversation_id.as_deref())?;
 
     Ok(())
 }
 
 #[tauri::command]
-fn update_unread_badge(
-    app: tauri::AppHandle,
-    count: u32,
-    has_unread: bool,
-) -> Result<(), String> {
+fn update_unread_badge(app: tauri::AppHandle, count: u32, has_unread: bool) -> Result<(), String> {
     let state = app.state::<AppState>();
     let settings = state.settings.lock().map_err(|e| e.to_string())?;
 
@@ -110,10 +98,7 @@ fn get_settings(app: tauri::AppHandle) -> Result<AppSettings, String> {
 }
 
 #[tauri::command]
-fn set_notifications_enabled(
-    app: tauri::AppHandle,
-    enabled: bool,
-) -> Result<AppSettings, String> {
+fn set_notifications_enabled(app: tauri::AppHandle, enabled: bool) -> Result<AppSettings, String> {
     let state = app.state::<AppState>();
     let mut settings = state.settings.lock().map_err(|e| e.to_string())?;
     settings.notifications_enabled = enabled;
@@ -123,10 +108,7 @@ fn set_notifications_enabled(
 }
 
 #[tauri::command]
-fn set_badge_enabled(
-    app: tauri::AppHandle,
-    enabled: bool,
-) -> Result<AppSettings, String> {
+fn set_badge_enabled(app: tauri::AppHandle, enabled: bool) -> Result<AppSettings, String> {
     let state = app.state::<AppState>();
     let mut settings = state.settings.lock().map_err(|e| e.to_string())?;
     settings.badge_enabled = enabled;
@@ -142,10 +124,7 @@ fn set_badge_enabled(
 }
 
 #[tauri::command]
-fn set_hide_message_content(
-    app: tauri::AppHandle,
-    enabled: bool,
-) -> Result<AppSettings, String> {
+fn set_hide_message_content(app: tauri::AppHandle, enabled: bool) -> Result<AppSettings, String> {
     let state = app.state::<AppState>();
     let mut settings = state.settings.lock().map_err(|e| e.to_string())?;
     settings.hide_message_content = enabled;
@@ -155,10 +134,7 @@ fn set_hide_message_content(
 }
 
 #[tauri::command]
-fn set_badge_color(
-    app: tauri::AppHandle,
-    color: String,
-) -> Result<AppSettings, String> {
+fn set_badge_color(app: tauri::AppHandle, color: String) -> Result<AppSettings, String> {
     // Basic validation: must be a valid 6-digit hex color
     let hex = color.trim().trim_start_matches('#');
     if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -168,12 +144,22 @@ fn set_badge_color(
     let mut settings = state.settings.lock().map_err(|e| e.to_string())?;
     settings.badge_color = format!("#{}", hex.to_uppercase());
     settings::save_settings(&app, &settings)?;
-    println!("[Messenger Desktop] Badge color set to: {}", settings.badge_color);
+    println!(
+        "[Messenger Desktop] Badge color set to: {}",
+        settings.badge_color
+    );
     Ok(settings.clone())
 }
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
