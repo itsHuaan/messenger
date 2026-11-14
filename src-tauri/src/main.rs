@@ -4,9 +4,10 @@
 mod badge;
 mod notification;
 mod settings;
+mod updater;
 
 use settings::AppSettings;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 pub struct AppState {
@@ -174,6 +175,7 @@ fn set_badge_color(
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // Register Windows AppUserModelID identity and shortcut
             notification::register_app_identity(app.handle());
@@ -182,6 +184,7 @@ fn main() {
             app.manage(AppState {
                 settings: Mutex::new(initial_settings),
             });
+            app.manage(Arc::new(updater::UpdateManager::new()));
 
             tauri::WebviewWindowBuilder::new(
                 app,
@@ -226,6 +229,10 @@ fn main() {
             set_badge_enabled,
             set_hide_message_content,
             set_badge_color,
+            updater::check_for_updates,
+            updater::download_update,
+            updater::install_and_restart,
+            updater::get_update_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

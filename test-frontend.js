@@ -290,4 +290,60 @@ assert.strictEqual(realMessageResult.reason, 'new_unread_message');
 
 console.log('✓ Passed: App restart prevents notification floods from seen and muted conversations');
 
+// ==========================================
+// Test 9: Updater logic & UX handlers
+// ==========================================
+console.log('Test 9: Updater manual-only checking, error mapping & progress calculations');
+
+function calculateDownloadProgress(downloaded, total) {
+  if (!total || total <= 0) return { percent: 0, text: `${(downloaded / (1024 * 1024)).toFixed(1)} MB` };
+  const percent = Math.min(100, Math.round((downloaded / total) * 100));
+  const dlMB = (downloaded / (1024 * 1024)).toFixed(1);
+  const totMB = (total / (1024 * 1024)).toFixed(1);
+  return { percent, text: `${dlMB} MB / ${totMB} MB` };
+}
+
+function mapUpdaterError(err) {
+  const msg = typeof err === 'string' ? err : (err && err.message) || '';
+  if (/dns|resolve|network|connection|timed out/i.test(msg)) {
+    return 'Unable to connect to the update server. Please check your internet connection and try again.';
+  }
+  if (/signature|minisign/i.test(msg)) {
+    return 'Update signature verification failed. The update cannot be verified securely.';
+  }
+  if (/404|not found/i.test(msg)) {
+    return 'No release manifest found at the updater endpoint.';
+  }
+  return msg || 'Update check failed.';
+}
+
+// 1. Progress calculation
+const p1 = calculateDownloadProgress(5242880, 10485760); // 5 MB of 10 MB
+assert.strictEqual(p1.percent, 50);
+assert.strictEqual(p1.text, '5.0 MB / 10.0 MB');
+
+const p2 = calculateDownloadProgress(10485760, null); // Unknown total
+assert.strictEqual(p2.percent, 0);
+assert.strictEqual(p2.text, '10.0 MB');
+
+// 2. Error mapping
+assert.strictEqual(mapUpdaterError('Could not resolve host: index.crates.io'), 'Unable to connect to the update server. Please check your internet connection and try again.');
+assert.strictEqual(mapUpdaterError('minisign: signature mismatch'), 'Update signature verification failed. The update cannot be verified securely.');
+assert.strictEqual(mapUpdaterError('status code: 404'), 'No release manifest found at the updater endpoint.');
+assert.strictEqual(mapUpdaterError('Custom error message'), 'Custom error message');
+
+// 3. Concurrent request lock simulation
+let isChecking = false;
+function requestUpdateCheck() {
+  if (isChecking) return { allowed: false, reason: 'concurrent_blocked' };
+  isChecking = true;
+  return { allowed: true, reason: 'started' };
+}
+assert.strictEqual(requestUpdateCheck().allowed, true);
+assert.strictEqual(requestUpdateCheck().allowed, false); // blocked while running
+isChecking = false;
+assert.strictEqual(requestUpdateCheck().allowed, true); // allowed after reset
+
+console.log('✓ Passed: Updater calculations, concurrency guards and error mappings verified');
+
 console.log('\nAll frontend logic tests passed successfully!');

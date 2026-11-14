@@ -9,6 +9,10 @@ fn main() {
                 "set_badge_enabled",
                 "set_hide_message_content",
                 "set_badge_color",
+                "check_for_updates",
+                "download_update",
+                "install_and_restart",
+                "get_update_status",
             ]),
         ),
     )

@@ -998,9 +998,50 @@
         font-size: 13px;
         font-weight: 600;
         cursor: pointer;
-        transition: background 0.2s;
+        transition: background 0.2s, opacity 0.2s;
+        text-align: center;
       }
       .md-action-btn:hover { background: #4e4f50; }
+      .md-action-btn:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .md-btn-primary {
+        background: #0084ff !important;
+        color: #fff !important;
+      }
+      .md-btn-primary:hover {
+        background: #0073e6 !important;
+      }
+      .md-btn-secondary {
+        background: #3a3b3c !important;
+        color: #e4e6eb !important;
+      }
+      .md-btn-secondary:hover {
+        background: #4e4f50 !important;
+      }
+      .md-section-divider {
+        height: 1px;
+        background: rgba(255, 255, 255, 0.08);
+        margin: 18px 0 16px 0;
+      }
+      .md-update-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+      }
+      #md-update-indicator {
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #0084ff;
+        border: 2px solid #1e1e1e;
+        display: none;
+      }
     `;
 
     container.appendChild(style);
@@ -1013,6 +1054,7 @@
       <svg viewBox="0 0 24 24">
         <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
       </svg>
+      <span id="md-update-indicator"></span>
     `;
 
     // Modal
@@ -1065,6 +1107,42 @@
           <button class="md-action-btn" id="md-test-notif-btn">Test Notification</button>
           <button class="md-action-btn" id="md-test-badge-btn">Test Unread Badge</button>
         </div>
+
+        <div class="md-section-divider"></div>
+
+        <div class="md-update-section">
+          <div class="md-update-header">
+            <div>
+              <div class="md-label">Software Updates</div>
+              <div class="md-sublabel" id="md-app-version-label">Messenger Desktop</div>
+              <div class="md-sublabel" id="md-last-check-label" style="font-size:11px;color:#8a8d91;margin-top:2px;">Last checked: Never</div>
+            </div>
+            <button class="md-action-btn md-btn-secondary" id="md-check-update-btn" style="flex:0 0 auto;padding:8px 14px;">Check for Updates</button>
+          </div>
+
+          <!-- Update status and progress panel -->
+          <div id="md-update-box" style="display:none;margin-top:14px;padding:12px;border-radius:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);">
+            <div id="md-update-status-text" style="font-size:13px;font-weight:500;"></div>
+            
+            <div id="md-update-notes-container" style="display:none;margin-top:8px;padding:8px 10px;border-radius:6px;background:rgba(0,0,0,0.3);font-size:12px;color:#ced0d4;max-height:110px;overflow-y:auto;white-space:pre-wrap;line-height:1.4;"></div>
+
+            <div id="md-update-progress-container" style="display:none;margin-top:10px;">
+              <div style="display:flex;justify-content:space-between;font-size:11px;color:#b0b3b8;margin-bottom:4px;">
+                <span id="md-update-progress-label">Downloading update...</span>
+                <span id="md-update-progress-percent">0%</span>
+              </div>
+              <div style="width:100%;height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;">
+                <div id="md-update-progress-bar" style="width:0%;height:100%;background:#0084ff;transition:width 0.15s ease;"></div>
+              </div>
+            </div>
+
+            <div id="md-update-actions" style="display:flex;gap:8px;margin-top:10px;">
+              <button class="md-action-btn md-btn-primary" id="md-download-update-btn" style="display:none;">Download and Install</button>
+              <button class="md-action-btn md-btn-primary" id="md-restart-update-btn" style="display:none;">Restart to Update</button>
+              <button class="md-action-btn" id="md-retry-update-btn" style="display:none;">Retry</button>
+            </div>
+          </div>
+        </div>
       </div>
     `;
 
@@ -1078,6 +1156,21 @@
       document.getElementById('md-toggle-badge').checked = !!appSettings.badge_enabled;
       document.getElementById('md-toggle-hide-content').checked = !!appSettings.hide_message_content;
       document.getElementById('md-badge-color').value = appSettings.badge_color || '#F52D2D';
+
+      // Query version and last check time
+      invoke('get_update_status')
+        .then(status => {
+          if (status) {
+            if (status.current_version) {
+              document.getElementById('md-app-version-label').textContent = `Messenger Desktop v${status.current_version}`;
+            }
+            if (status.last_check) {
+              document.getElementById('md-last-check-label').textContent = `Last checked: ${status.last_check}`;
+            }
+          }
+        })
+        .catch(console.error);
+
       modal.style.display = 'flex';
     };
 
@@ -1147,6 +1240,157 @@
         count: nextCount,
         hasUnread: nextCount > 0
       }).catch(err => alert('Badge error: ' + err));
+    });
+
+    // ==========================================
+    // Update Manager Controls
+    // ==========================================
+    const checkBtn = document.getElementById('md-check-update-btn');
+    const updateBox = document.getElementById('md-update-box');
+    const statusText = document.getElementById('md-update-status-text');
+    const notesContainer = document.getElementById('md-update-notes-container');
+    const progressContainer = document.getElementById('md-update-progress-container');
+    const progressLabel = document.getElementById('md-update-progress-label');
+    const progressPercent = document.getElementById('md-update-progress-percent');
+    const progressBar = document.getElementById('md-update-progress-bar');
+    const downloadBtn = document.getElementById('md-download-update-btn');
+    const restartBtn = document.getElementById('md-restart-update-btn');
+    const retryBtn = document.getElementById('md-retry-update-btn');
+    const indicator = document.getElementById('md-update-indicator');
+
+    let isCheckingUpdates = false;
+    let isDownloadingUpdate = false;
+
+    // Background download progress event listener
+    if (window.__TAURI__ && window.__TAURI__.event) {
+      window.__TAURI__.event.listen('update-download-progress', evt => {
+        const payload = evt.payload || {};
+        const pct = payload.percent != null ? payload.percent : 0;
+        progressPercent.textContent = `${pct}%`;
+        progressBar.style.width = `${pct}%`;
+        if (payload.total) {
+          const dlMB = (payload.downloaded / (1024 * 1024)).toFixed(1);
+          const totMB = (payload.total / (1024 * 1024)).toFixed(1);
+          progressLabel.textContent = `Downloading: ${dlMB} MB / ${totMB} MB`;
+        }
+      }).catch(console.error);
+
+      window.__TAURI__.event.listen('update-download-complete', evt => {
+        progressContainer.style.display = 'none';
+        downloadBtn.style.display = 'none';
+        restartBtn.style.display = 'inline-block';
+        const v = (evt.payload && evt.payload.version) ? ` v${evt.payload.version}` : '';
+        statusText.style.color = '#31a24c';
+        statusText.textContent = `Update${v} ready to install. Restart Messenger to apply.`;
+      }).catch(console.error);
+    }
+
+    const performUpdateCheck = () => {
+      if (isCheckingUpdates || isDownloadingUpdate) return;
+      isCheckingUpdates = true;
+
+      checkBtn.disabled = true;
+      checkBtn.textContent = 'Checking...';
+      updateBox.style.display = 'block';
+      statusText.style.color = '#e4e6eb';
+      statusText.textContent = 'Checking for updates...';
+      notesContainer.style.display = 'none';
+      progressContainer.style.display = 'none';
+      downloadBtn.style.display = 'none';
+      restartBtn.style.display = 'none';
+      retryBtn.style.display = 'none';
+
+      invoke('check_for_updates')
+        .then(info => {
+          isCheckingUpdates = false;
+          checkBtn.disabled = false;
+          checkBtn.textContent = 'Check for Updates';
+
+          if (info.current_version) {
+            document.getElementById('md-app-version-label').textContent = `Messenger Desktop v${info.current_version}`;
+          }
+          if (info.last_check) {
+            document.getElementById('md-last-check-label').textContent = `Last checked: ${info.last_check}`;
+          }
+
+          if (info.available) {
+            indicator.style.display = 'block';
+            statusText.textContent = `Update available: v${info.version}`;
+            statusText.style.color = '#31a24c';
+
+            if (info.body && info.body.trim()) {
+              notesContainer.textContent = info.body.trim();
+              notesContainer.style.display = 'block';
+            } else {
+              notesContainer.style.display = 'none';
+            }
+
+            downloadBtn.style.display = 'inline-block';
+          } else {
+            indicator.style.display = 'none';
+            statusText.textContent = `You're up to date! Version ${info.current_version} is the latest release.`;
+            statusText.style.color = '#2e89ff';
+          }
+        })
+        .catch(err => {
+          isCheckingUpdates = false;
+          checkBtn.disabled = false;
+          checkBtn.textContent = 'Check for Updates';
+          statusText.style.color = '#fa383e';
+          statusText.textContent = typeof err === 'string' ? err : (err.message || 'Update check failed.');
+          retryBtn.style.display = 'inline-block';
+          console.warn('[Messenger Desktop] Update check failed:', err);
+        });
+    };
+
+    checkBtn.addEventListener('click', performUpdateCheck);
+    retryBtn.addEventListener('click', performUpdateCheck);
+
+    downloadBtn.addEventListener('click', () => {
+      if (isDownloadingUpdate) return;
+      isDownloadingUpdate = true;
+
+      downloadBtn.disabled = true;
+      checkBtn.disabled = true;
+      retryBtn.style.display = 'none';
+      progressContainer.style.display = 'block';
+      progressBar.style.width = '0%';
+      progressPercent.textContent = '0%';
+      progressLabel.textContent = 'Starting download...';
+      statusText.style.color = '#e4e6eb';
+      statusText.textContent = 'Downloading update in the background...';
+
+      invoke('download_update')
+        .then(version => {
+          isDownloadingUpdate = false;
+          checkBtn.disabled = false;
+          progressContainer.style.display = 'none';
+          downloadBtn.style.display = 'none';
+          restartBtn.style.display = 'inline-block';
+          statusText.style.color = '#31a24c';
+          statusText.textContent = `Update v${version} downloaded and verified! Restart Messenger to apply.`;
+        })
+        .catch(err => {
+          isDownloadingUpdate = false;
+          checkBtn.disabled = false;
+          downloadBtn.disabled = false;
+          progressContainer.style.display = 'none';
+          statusText.style.color = '#fa383e';
+          statusText.textContent = typeof err === 'string' ? err : (err.message || 'Download failed.');
+          retryBtn.style.display = 'inline-block';
+          console.error('[Messenger Desktop] Download failed:', err);
+        });
+    });
+
+    restartBtn.addEventListener('click', () => {
+      restartBtn.disabled = true;
+      restartBtn.textContent = 'Restarting...';
+      statusText.textContent = 'Launching installer and updating Messenger...';
+      invoke('install_and_restart').catch(err => {
+        restartBtn.disabled = false;
+        restartBtn.textContent = 'Restart to Update';
+        alert('Failed to launch installer: ' + err);
+      });
     });
   }
 

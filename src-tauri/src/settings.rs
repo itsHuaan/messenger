@@ -16,6 +16,8 @@ pub struct AppSettings {
     /// Badge fill color as a hex string, e.g. "#F52D2D"
     #[serde(default = "default_badge_color")]
     pub badge_color: String,
+    #[serde(default)]
+    pub last_update_check: Option<String>,
 }
 
 impl Default for AppSettings {
@@ -25,6 +27,7 @@ impl Default for AppSettings {
             badge_enabled: true,
             hide_message_content: false,
             badge_color: default_badge_color(),
+            last_update_check: None,
         }
     }
 }
@@ -75,6 +78,7 @@ mod tests {
         assert!(settings.badge_enabled);
         assert!(!settings.hide_message_content);
         assert_eq!(settings.badge_color, "#F52D2D");
+        assert!(settings.last_update_check.is_none());
     }
 
     #[test]
@@ -84,6 +88,7 @@ mod tests {
             badge_enabled: true,
             hide_message_content: true,
             badge_color: "#00AAFF".to_string(),
+            last_update_check: Some("2026-11-14 13:00:00 UTC".to_string()),
         };
         let serialized = serde_json::to_string(&original).expect("Serialization failed");
         let deserialized: AppSettings =
@@ -93,6 +98,7 @@ mod tests {
         assert_eq!(original.badge_enabled, deserialized.badge_enabled);
         assert_eq!(original.hide_message_content, deserialized.hide_message_content);
         assert_eq!(original.badge_color, deserialized.badge_color);
+        assert_eq!(original.last_update_check, deserialized.last_update_check);
     }
 
     #[test]

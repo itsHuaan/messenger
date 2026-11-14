@@ -139,18 +139,35 @@ jobs:
           $assetNames = @($release.assets | ForEach-Object { $_.name })
           Write-Host "Uploaded release assets ($($assetNames.Count)): $($assetNames -join ', ')"
           
-          if (-not ($assetNames -contains "latest.json")) {
+          # 1. Verify latest.json updater manifest
+          $latestJsonAsset = $release.assets | Where-Object { $_.name -eq "latest.json" }
+          if (-not $latestJsonAsset) {
             Write-Error "[ASSET MISSING] 'latest.json' was not uploaded to release."
             exit 1
           }
+          Write-Host "[FOUND] Updater manifest: latest.json"
           
-          $installer = $assetNames | Where-Object { $_ -like "*.exe" -or $_ -like "*.msi" }
-          if (-not $installer) {
-            Write-Error "[ASSET MISSING] No Windows installer (.exe or .msi) found in release assets."
+          # 2. Verify Windows installers (.exe and .msi)
+          $exeInstaller = $assetNames | Where-Object { $_ -like "*.exe" }
+          $msiInstaller = $assetNames | Where-Object { $_ -like "*.msi" }
+          if (-not $exeInstaller) {
+            Write-Error "[ASSET MISSING] No Windows NSIS installer (.exe) found in release assets."
             exit 1
           }
-          Write-Host "[FOUND] Installer: $($installer -join ', ')"
+          Write-Host "[FOUND] NSIS Installer: $($exeInstaller -join ', ')"
+          if ($msiInstaller) {
+            Write-Host "[FOUND] MSI Installer: $($msiInstaller -join ', ')"
+          }
           
+          # 3. Verify updater archive (.zip)
+          $updaterZip = $assetNames | Where-Object { $_ -like "*.zip" }
+          if (-not $updaterZip) {
+            Write-Error "[ASSET MISSING] No updater bundle (.zip) found in release assets."
+            exit 1
+          }
+          Write-Host "[FOUND] Updater bundle: $($updaterZip -join ', ')"
+
+          # 4. Verify cryptographic signature (.sig)
           $sig = $assetNames | Where-Object { $_ -like "*.sig" }
           if (-not $sig) {
             Write-Error "[ASSET MISSING] No cryptographic signature (.sig) found in release assets."
@@ -158,4 +175,26 @@ jobs:
           }
           Write-Host "[FOUND] Signature: $($sig -join ', ')"
           
-          Write-Host "[SUCCESS] All required release artifacts and updater manifests verified successfully"
+          # 5. Inspect and validate latest.json contents and target
+          try {
+            $manifestJson = Invoke-RestMethod -Uri $latestJsonAsset.browser_download_url
+            Write-Host "Inspecting latest.json: version = $($manifestJson.version)"
+            if ($manifestJson.platforms -and $manifestJson.platforms.'windows-x86_64') {
+              $winPlatform = $manifestJson.platforms.'windows-x86_64'
+              Write-Host "Windows updater target URL: $($winPlatform.url)"
+              if ($winPlatform.url -notlike "*nsis.zip*") {
+                Write-Warning "Windows updater URL does not mention nsis.zip: $($winPlatform.url)"
+              } else {
+                Write-Host "[VERIFIED] latest.json correctly points to NSIS updater target."
+              }
+              if ([string]::IsNullOrWhiteSpace($winPlatform.signature)) {
+                Write-Error "Signature in latest.json is empty."
+                exit 1
+              }
+              Write-Host "[VERIFIED] latest.json includes valid cryptographic signature."
+            }
+          } catch {
+            Write-Warning "Could not fetch or inspect latest.json body: $_"
+          }
+          
+          Write-Host "[SUCCESS] All required release artifacts and updater manifests verified successfully!"

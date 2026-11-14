@@ -14,12 +14,17 @@
     "core:default",
     "opener:default",
     "notification:default",
+    "updater:default",
     "allow-notify-message",
     "allow-update-unread-badge",
     "allow-get-settings",
     "allow-set-notifications-enabled",
     "allow-set-badge-enabled",
     "allow-set-hide-message-content",
-    "allow-set-badge-color"
+    "allow-set-badge-color",
+    "allow-check-for-updates",
+    "allow-download-update",
+    "allow-install-and-restart",
+    "allow-get-update-status"
   ]
 }
