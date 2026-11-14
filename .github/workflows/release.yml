@@ -1,0 +1,181 @@
+name: Release Pipeline
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 1. Main Branch Release Protection: Tag must point to an ancestor of origin/main
+      - name: Verify Tag Ancestry (Main Branch Protection)
+        shell: pwsh
+        run: |
+          Write-Host "Fetching latest main branch history and tags from origin..."
+          git fetch origin main --tags
+          
+          $tagRef = "refs/tags/$env:GITHUB_REF_NAME"
+          $tagCommit = git rev-parse "$tagRef^{commit}"
+          Write-Host "Pushed tag: $env:GITHUB_REF_NAME resolves to commit: $tagCommit"
+          
+          $mainCommit = git rev-parse "origin/main^{commit}"
+          Write-Host "origin/main resolves to commit: $mainCommit"
+          
+          git merge-base --is-ancestor $tagCommit origin/main
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Release denied: Git tag '$env:GITHUB_REF_NAME' (commit $tagCommit) does not belong to origin/main branch history."
+            exit 1
+          }
+          Write-Host "[PASSED] Tag commit $tagCommit is an ancestor of origin/main."
+
+      # 2. Tag Format Validation & Version Extraction: Strictly vMAJOR.MINOR.PATCH
+      - name: Validate Tag Format & Extract Version
+        id: extract_version
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -notmatch '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
+            Write-Error "[INVALID TAG] Tag '$tag' does not strictly match 'vMAJOR.MINOR.PATCH' (e.g., v0.0.1). Release aborted."
+            exit 1
+          }
+          $version = $tag.Substring(1)
+          Write-Host "[PASSED] Valid release tag '$tag'. Extracted version: $version"
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      # 3. Validate Signing Credentials before building
+      - name: Validate Signing Credentials
+        shell: pwsh
+        env:
+          SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SIGNING_KEY)) {
+            Write-Error "[ERROR] Missing TAURI_SIGNING_PRIVATE_KEY repository secret. Updater artifacts cannot be signed."
+            exit 1
+          }
+          Write-Host "[PASSED] Tauri signing private key secret is present."
+
+      # 4. Check for duplicate or existing published release
+      - name: Check for Existing Release
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $headers = @{
+            "Authorization" = "Bearer $env:GITHUB_TOKEN"
+            "Accept" = "application/vnd.github+json"
+            "User-Agent" = "GitHub-Actions-Release-Check"
+          }
+          try {
+            $existing = Invoke-RestMethod -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/tags/$env:GITHUB_REF_NAME" -Headers $headers -ErrorAction Stop
+            if ($existing -and -not $existing.draft) {
+              Write-Error "[ERROR] Release for tag '$env:GITHUB_REF_NAME' already exists and is published. Cannot overwrite existing release."
+              exit 1
+            }
+          } catch {
+            Write-Host "[PASSED] No published release found for '$env:GITHUB_REF_NAME'. Proceeding with build."
+          }
+
+      # 5. Environment Setup
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      # 6. Synchronize and Verify Project Versions
+      - name: Synchronize Project Versions
+        run: node scripts/sync-version.js "${{ steps.extract_version.outputs.version }}"
+
+      # 7. Install Dependencies
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # 8. Build Application and Publish GitHub Release
+      - name: Build & Publish Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: ${{ github.ref_name }}
+          releaseBody: |
+            ## Messenger ${{ steps.extract_version.outputs.version }}
+            
+            Download the Windows installer below to install or update Messenger.
+          generateReleaseNotes: true
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
+
+      # 9. Post-Release Verification of Required Assets
+      - name: Verify Uploaded Release Assets
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $headers = @{
+            "Authorization" = "Bearer $env:GITHUB_TOKEN"
+            "Accept" = "application/vnd.github+json"
+            "User-Agent" = "GitHub-Actions-Release-Verification"
+          }
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/tags/$env:GITHUB_REF_NAME" -Headers $headers
+          $assetNames = @($release.assets | ForEach-Object { $_.name })
+          Write-Host "Uploaded release assets ($($assetNames.Count)): $($assetNames -join ', ')"
+          
+          # 1. Verify latest.json updater manifest
+          if (-not ($assetNames -contains "latest.json")) {
+            Write-Error "[ASSET MISSING] 'latest.json' was not uploaded to release."
+            exit 1
+          }
+          
+          # 2. Verify Windows installer
+          $installer = $assetNames | Where-Object { $_ -like "*.exe" -or $_ -like "*.msi" }
+          if (-not $installer) {
+            Write-Error "[ASSET MISSING] No Windows installer (.exe or .msi) found in release assets."
+            exit 1
+          }
+          Write-Host "[FOUND] Installer: $($installer -join ', ')"
+          
+          # 3. Verify updater bundle (.zip)
+          $updaterZip = $assetNames | Where-Object { $_ -like "*.zip" }
+          if (-not $updaterZip) {
+            Write-Error "[ASSET MISSING] No updater package (.zip) found in release assets."
+            exit 1
+          }
+          Write-Host "[FOUND] Updater package: $($updaterZip -join ', ')"
+          
+          # 4. Verify signature (.sig)
+          $sig = $assetNames | Where-Object { $_ -like "*.sig" }
+          if (-not $sig) {
+            Write-Error "[ASSET MISSING] No cryptographic signature (.sig) found in release assets."
+            exit 1
+          }
+          Write-Host "[FOUND] Signature: $($sig -join ', ')"
+          
+          Write-Host "[SUCCESS] All required release artifacts and updater manifests verified successfully!"
