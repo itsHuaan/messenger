@@ -1460,14 +1460,372 @@
     });
   }
 
+  // ==========================================
+  // Native File Download Support
+  // ==========================================
+  const DOWNLOAD_EXTENSIONS = new Set([
+    'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp',
+    'txt', 'csv', 'rtf', 'zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz',
+    'mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'mp4', 'mkv', 'avi', 'mov',
+    'wmv', 'webm', 'm4v', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg',
+    'ico', 'exe', 'msi', 'apk', 'dmg', 'iso'
+  ]);
+
+  function isDownloadUrl(urlString) {
+    if (!urlString || typeof urlString !== 'string') return false;
+    if (urlString.startsWith('blob:')) return true;
+
+    try {
+      const u = new URL(urlString, window.location.href);
+      const host = u.hostname.toLowerCase();
+      const path = u.pathname.toLowerCase();
+
+      // Facebook / Messenger attachment domains
+      if (host === 'cdn.fbsbx.com' || host.endsWith('.fbsbx.com') || host === 'lookaside.fbsbx.com') {
+        return true;
+      }
+      if (
+        host.endsWith('.fbcdn.net') &&
+        (path.includes('/v/') ||
+          u.searchParams.get('dl') === '1' ||
+          u.searchParams.get('attachment') === '1')
+      ) {
+        return true;
+      }
+
+      // Check file extensions
+      const extMatch = path.match(/\.([a-z0-9]+)$/);
+      if (extMatch && DOWNLOAD_EXTENSIONS.has(extMatch[1])) {
+        return true;
+      }
+
+      // Query param explicitly indicating download
+      if (
+        u.searchParams.get('dl') === '1' ||
+        u.searchParams.get('download') === '1' ||
+        u.searchParams.get('download') === 'true'
+      ) {
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  function triggerDownload(url, suggestedName = '') {
+    if (!url) return;
+    try {
+      const a = document.createElement('a');
+      a.href = url;
+      if (suggestedName) {
+        a.download = suggestedName;
+      } else {
+        a.setAttribute('download', '');
+      }
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        if (a.parentNode) {
+          a.parentNode.removeChild(a);
+        }
+      }, 150);
+    } catch (err) {
+      console.warn('[Messenger Desktop] Error triggering download:', err);
+    }
+  }
+
+  window.__MESSENGER_DESKTOP_TRIGGER_DOWNLOAD__ = triggerDownload;
+
+  // Intercept programmatic anchor clicks so that target="_blank" doesn't open an external browser
+  const originalAnchorClick = HTMLAnchorElement.prototype.click;
+  HTMLAnchorElement.prototype.click = function () {
+    try {
+      if (this.hasAttribute('download') || isDownloadUrl(this.href)) {
+        this.removeAttribute('target');
+      }
+    } catch (_) {}
+    return originalAnchorClick.apply(this, arguments);
+  };
+
+  // Intercept user DOM clicks for attachments and download actions
+  function setupDownloadInterception() {
+    window.addEventListener(
+      'click',
+      e => {
+        const target = e.target;
+        if (!target) return;
+
+        // 1. Check if an anchor tag was clicked
+        const anchor = target.closest('a');
+        if (anchor && anchor.href) {
+          const href = anchor.href;
+          if (anchor.hasAttribute('download') || isDownloadUrl(href)) {
+            if (anchor.target === '_blank') {
+              e.preventDefault();
+              e.stopPropagation();
+              triggerDownload(href, anchor.download || '');
+              return;
+            }
+          }
+        }
+
+        // 2. Check if a download button was clicked in media viewer / attachments
+        const downloadBtn = target.closest(
+          '[role="button"][aria-label*="Download" i], ' +
+            '[role="button"][aria-label*="Tải xuống" i], ' +
+            '[role="button"][title*="Download" i], ' +
+            '[role="button"][title*="Tải xuống" i], ' +
+            '[aria-label*="Download photo" i], ' +
+            '[aria-label*="Download video" i], ' +
+            '[aria-label*="Tải ảnh xuống" i], ' +
+            '[aria-label*="Tải video xuống" i]'
+        );
+        if (downloadBtn) {
+          console.log('[Messenger Desktop] Download button activated in UI');
+        }
+      },
+      true
+    );
+  }
+
+  // ==========================================
+  // Download Manager UI Feedback
+  // ==========================================
+  function setupDownloadManagerUI() {
+    const activeDownloads = new Map();
+
+    // Inject slide-in animation styles if not already present
+    if (!document.getElementById('md-download-styles')) {
+      const style = document.createElement('style');
+      style.id = 'md-download-styles';
+      style.textContent = `
+        @keyframes md-download-slide-in {
+          from { opacity: 0; transform: translateY(16px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes md-indeterminate-bar {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    const container = document.createElement('div');
+    container.id = 'md-download-manager-container';
+    container.style.cssText = `
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      width: 360px;
+      max-width: calc(100vw - 48px);
+      z-index: 2147483647;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    `;
+    document.body.appendChild(container);
+
+    function formatBytes(bytes) {
+      if (!bytes || bytes <= 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    function getFileIcon(filename) {
+      const ext = (filename.split('.').pop() || '').toLowerCase();
+      if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(ext)) {
+        return '🖼️';
+      }
+      if (['mp4', 'mkv', 'mov', 'avi', 'webm', 'wmv'].includes(ext)) {
+        return '🎬';
+      }
+      if (['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac'].includes(ext)) {
+        return '🎵';
+      }
+      if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt'].includes(ext)) {
+        return '📄';
+      }
+      if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) {
+        return '📦';
+      }
+      return '📁';
+    }
+
+    function createOrUpdateDownloadCard(payload, status = 'downloading') {
+      let card = activeDownloads.get(payload.id);
+      if (!card) {
+        card = document.createElement('div');
+        card.id = `md-dl-${payload.id}`;
+        card.style.cssText = `
+          pointer-events: auto;
+          background: #242526;
+          color: #e4e6eb;
+          border: 1px solid #3a3b3c;
+          border-radius: 12px;
+          padding: 14px 16px;
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+          animation: md-download-slide-in 0.25s ease;
+        `;
+
+        card.innerHTML = `
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
+              <span class="md-dl-icon" style="font-size: 18px;">${getFileIcon(payload.filename)}</span>
+              <span class="md-dl-title" title="${payload.filename}" style="font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 230px;">
+                ${payload.filename}
+              </span>
+            </div>
+            <button class="md-dl-cancel-btn" title="Cancel Download" style="background: transparent; border: none; color: #b0b3b8; cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 4px;">✕</button>
+          </div>
+          <div class="md-dl-progress-bar-bg" style="width: 100%; height: 6px; background: #3a3b3c; border-radius: 3px; overflow: hidden; position: relative;">
+            <div class="md-dl-progress-bar-fill" style="width: 0%; height: 100%; background: #2e89ff; border-radius: 3px; transition: width 0.2s ease;"></div>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #b0b3b8;">
+            <span class="md-dl-status-text">Starting download...</span>
+            <span class="md-dl-percent-text">0%</span>
+          </div>
+          <div class="md-dl-actions" style="display: none; align-items: center; gap: 10px; margin-top: 2px;">
+            <button class="md-dl-open-btn" style="background: #2e89ff; color: white; border: none; border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 500; cursor: pointer;">Open</button>
+            <button class="md-dl-folder-btn" style="background: #3a3b3c; color: #e4e6eb; border: none; border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 500; cursor: pointer;">Show in Folder</button>
+          </div>
+        `;
+
+        const cancelBtn = card.querySelector('.md-dl-cancel-btn');
+        cancelBtn.addEventListener('click', () => {
+          invoke('cancel_download', { id: payload.id }).catch(() => {});
+          removeCard(payload.id);
+        });
+
+        container.appendChild(card);
+        activeDownloads.set(payload.id, card);
+      }
+
+      const barFill = card.querySelector('.md-dl-progress-bar-fill');
+      const statusText = card.querySelector('.md-dl-status-text');
+      const percentText = card.querySelector('.md-dl-percent-text');
+      const actionsDiv = card.querySelector('.md-dl-actions');
+      const cancelBtn = card.querySelector('.md-dl-cancel-btn');
+
+      if (status === 'downloading') {
+        if (payload.percent != null) {
+          barFill.style.width = `${payload.percent}%`;
+          barFill.style.background = '#2e89ff';
+          percentText.textContent = `${payload.percent}%`;
+        } else {
+          // Indeterminate progress
+          barFill.style.width = '100%';
+          barFill.style.background = 'linear-gradient(90deg, #2e89ff 0%, #45bd62 50%, #2e89ff 100%)';
+          barFill.style.backgroundSize = '200% 200%';
+          barFill.style.animation = 'md-indeterminate-bar 2s ease infinite';
+          percentText.textContent = '';
+        }
+
+        const receivedStr = formatBytes(payload.received_bytes || 0);
+        if (payload.total_bytes) {
+          statusText.textContent = `${receivedStr} / ${formatBytes(payload.total_bytes)}`;
+        } else {
+          statusText.textContent = `${receivedStr} downloaded`;
+        }
+      } else if (status === 'completed') {
+        barFill.style.width = '100%';
+        barFill.style.background = '#31a24c';
+        barFill.style.animation = 'none';
+        statusText.style.color = '#31a24c';
+        statusText.textContent = `Completed (${formatBytes(payload.total_bytes)})`;
+        percentText.textContent = '100%';
+        cancelBtn.style.display = 'none';
+        actionsDiv.style.display = 'flex';
+
+        const openBtn = card.querySelector('.md-dl-open-btn');
+        openBtn.onclick = () => {
+          invoke('open_downloaded_file', { path: payload.path }).catch(err => {
+            alert('Could not open file: ' + err);
+          });
+        };
+
+        const folderBtn = card.querySelector('.md-dl-folder-btn');
+        folderBtn.onclick = () => {
+          invoke('show_in_folder', { path: payload.path }).catch(err => {
+            alert('Could not reveal folder: ' + err);
+          });
+        };
+
+        // Automatically dismiss completed card after 10 seconds
+        setTimeout(() => {
+          removeCard(payload.id);
+        }, 10000);
+      } else if (status === 'error') {
+        barFill.style.background = '#fa383e';
+        barFill.style.animation = 'none';
+        statusText.style.color = '#fa383e';
+        statusText.textContent = payload.error || 'Download failed';
+        percentText.textContent = 'Error';
+        setTimeout(() => {
+          removeCard(payload.id);
+        }, 8000);
+      }
+    }
+
+    function removeCard(id) {
+      const card = activeDownloads.get(id);
+      if (card) {
+        card.style.opacity = '0';
+        card.style.transform = 'translateY(10px)';
+        setTimeout(() => {
+          if (card.parentNode) {
+            card.parentNode.removeChild(card);
+          }
+          activeDownloads.delete(id);
+        }, 250);
+      }
+    }
+
+    // Attach listeners to Tauri events
+    if (
+      window.__TAURI__ &&
+      window.__TAURI__.event &&
+      typeof window.__TAURI__.event.listen === 'function'
+    ) {
+      window.__TAURI__.event.listen('download-started', evt => {
+        createOrUpdateDownloadCard(evt.payload || {}, 'downloading');
+      });
+
+      window.__TAURI__.event.listen('download-progress', evt => {
+        createOrUpdateDownloadCard(evt.payload || {}, 'downloading');
+      });
+
+      window.__TAURI__.event.listen('download-completed', evt => {
+        createOrUpdateDownloadCard(evt.payload || {}, 'completed');
+      });
+
+      window.__TAURI__.event.listen('download-error', evt => {
+        createOrUpdateDownloadCard(evt.payload || {}, 'error');
+      });
+    }
+  }
+
   // Inject UI when document is ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
       createSettingsUI();
       setupDragAndDrop();
+      setupDownloadInterception();
+      setupDownloadManagerUI();
     });
   } else {
     createSettingsUI();
     setupDragAndDrop();
+    setupDownloadInterception();
+    setupDownloadManagerUI();
   }
 })();

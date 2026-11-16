@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod badge;
+mod download;
 mod notification;
 mod settings;
 mod startup;
@@ -175,6 +176,7 @@ fn main() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // Register Windows AppUserModelID identity and shortcut
             notification::register_app_identity(app.handle());
@@ -189,8 +191,12 @@ fn main() {
                 settings: Mutex::new(initial_settings),
             });
             app.manage(Arc::new(updater::UpdateManager::new()));
+            app.manage(download::DownloadManager::new());
 
-            tauri::WebviewWindowBuilder::new(
+            let app_handle_nav = app.handle().clone();
+            let app_handle_win = app.handle().clone();
+
+            let webview_window = tauri::WebviewWindowBuilder::new(
                 app,
                 "main",
                 tauri::WebviewUrl::External(
@@ -206,9 +212,18 @@ fn main() {
             .initialization_script(include_str!("inject.js"))
 
             // Handle normal navigation
-            .on_navigation(|url| {
+            .on_navigation(move |url| {
                 if is_internal_url(url) {
                     true
+                } else if download::is_download_url(url) {
+                    if let Some(window) = app_handle_nav.get_webview_window("main") {
+                        let script = format!(
+                            "window.__MESSENGER_DESKTOP_TRIGGER_DOWNLOAD__ && window.__MESSENGER_DESKTOP_TRIGGER_DOWNLOAD__({});",
+                            serde_json::to_string(url.as_str()).unwrap_or_default()
+                        );
+                        let _ = window.eval(&script);
+                    }
+                    false
                 } else {
                     open_in_browser(url.as_str());
                     false
@@ -216,12 +231,28 @@ fn main() {
             })
 
             // Handle target="_blank" and window.open()
-            .on_new_window(|url, _features| {
-                open_in_browser(url.as_str());
-                tauri::webview::NewWindowResponse::Deny
+            .on_new_window(move |url, _features| {
+                if download::is_download_url(&url) {
+                    if let Some(window) = app_handle_win.get_webview_window("main") {
+                        let script = format!(
+                            "window.__MESSENGER_DESKTOP_TRIGGER_DOWNLOAD__ && window.__MESSENGER_DESKTOP_TRIGGER_DOWNLOAD__({});",
+                            serde_json::to_string(url.as_str()).unwrap_or_default()
+                        );
+                        let _ = window.eval(&script);
+                    }
+                    tauri::webview::NewWindowResponse::Deny
+                } else {
+                    open_in_browser(url.as_str());
+                    tauri::webview::NewWindowResponse::Deny
+                }
             })
 
             .build()?;
+
+            // Attach native Windows download handling to WebView2
+            if let Err(e) = download::setup_webview_downloads(&webview_window, app.handle().clone()) {
+                eprintln!("[Messenger Desktop] Failed to initialize WebView2 download handler: {e}");
+            }
 
             Ok(())
         })
@@ -238,6 +269,10 @@ fn main() {
             updater::download_update,
             updater::install_and_restart,
             updater::get_update_status,
+            download::cancel_download,
+            download::get_active_downloads,
+            download::open_downloaded_file,
+            download::show_in_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

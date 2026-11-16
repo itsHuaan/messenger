@@ -391,4 +391,114 @@ assert.strictEqual(settingsCopy.run_at_startup, false, 'Settings state must reve
 
 console.log('✓ Passed: Run at startup toggle behaves as expected (default off, toggle on/off, revert on error)');
 
+// ==========================================
+// Test 11: Download Detection & Format Logic
+// ==========================================
+console.log('\nTest 11: Download detection, byte formatting & icon resolution');
+
+const DOWNLOAD_EXTENSIONS = new Set([
+  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp',
+  'txt', 'csv', 'rtf', 'zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz',
+  'mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'mp4', 'mkv', 'avi', 'mov',
+  'wmv', 'webm', 'm4v', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg',
+  'ico', 'exe', 'msi', 'apk', 'dmg', 'iso'
+]);
+
+function isDownloadUrl(urlString) {
+  if (!urlString || typeof urlString !== 'string') return false;
+  if (urlString.startsWith('blob:')) return true;
+
+  try {
+    const u = new URL(urlString, 'https://www.messenger.com');
+    const host = u.hostname.toLowerCase();
+    const path = u.pathname.toLowerCase();
+
+    if (host === 'cdn.fbsbx.com' || host.endsWith('.fbsbx.com') || host === 'lookaside.fbsbx.com') {
+      return true;
+    }
+    if (
+      host.endsWith('.fbcdn.net') &&
+      (path.includes('/v/') ||
+        u.searchParams.get('dl') === '1' ||
+        u.searchParams.get('attachment') === '1')
+    ) {
+      return true;
+    }
+
+    const extMatch = path.match(/\.([a-z0-9]+)$/);
+    if (extMatch && DOWNLOAD_EXTENSIONS.has(extMatch[1])) {
+      return true;
+    }
+
+    if (
+      u.searchParams.get('dl') === '1' ||
+      u.searchParams.get('download') === '1' ||
+      u.searchParams.get('download') === 'true'
+    ) {
+      return true;
+    }
+  } catch (_) {}
+  return false;
+}
+
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+function getFileIcon(filename) {
+  const ext = (filename.split('.').pop() || '').toLowerCase();
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(ext)) {
+    return '🖼️';
+  }
+  if (['mp4', 'mkv', 'mov', 'avi', 'webm', 'wmv'].includes(ext)) {
+    return '🎬';
+  }
+  if (['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac'].includes(ext)) {
+    return '🎵';
+  }
+  if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt'].includes(ext)) {
+    return '📄';
+  }
+  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) {
+    return '📦';
+  }
+  return '📁';
+}
+
+// 1. Download URL tests
+assert.strictEqual(isDownloadUrl('https://cdn.fbsbx.com/v/t59.2708-21/12345.pdf?_nc_cat=100'), true);
+assert.strictEqual(isDownloadUrl('https://lookaside.fbsbx.com/attachment/123'), true);
+assert.strictEqual(isDownloadUrl('https://video.xx.fbcdn.net/v/t42.17977-2/test.mp4'), true);
+assert.strictEqual(isDownloadUrl('https://example.com/files/spec.docx'), true);
+assert.strictEqual(isDownloadUrl('https://example.com/download.zip'), true);
+assert.strictEqual(isDownloadUrl('https://example.com/api/export?dl=1'), true);
+assert.strictEqual(isDownloadUrl('blob:https://www.messenger.com/1234-5678-abcd'), true);
+
+// Non-download URLs (should NOT intercept navigation)
+assert.strictEqual(isDownloadUrl('https://www.messenger.com/t/123456789'), false);
+assert.strictEqual(isDownloadUrl('https://www.messenger.com/e2ee/t/987654321'), false);
+assert.strictEqual(isDownloadUrl('https://google.com'), false);
+assert.strictEqual(isDownloadUrl('https://github.com/itsHuaan/messenger'), false);
+
+// 2. formatBytes tests
+assert.strictEqual(formatBytes(0), '0 B');
+assert.strictEqual(formatBytes(500), '500 B');
+assert.strictEqual(formatBytes(1024), '1 KB');
+assert.strictEqual(formatBytes(1048576), '1 MB');
+assert.strictEqual(formatBytes(1073741824 * 2.5), '2.5 GB');
+
+// 3. getFileIcon tests
+assert.strictEqual(getFileIcon('photo.png'), '🖼️');
+assert.strictEqual(getFileIcon('video.mp4'), '🎬');
+assert.strictEqual(getFileIcon('voice.m4a'), '🎵');
+assert.strictEqual(getFileIcon('doc.pdf'), '📄');
+assert.strictEqual(getFileIcon('archive.zip'), '📦');
+assert.strictEqual(getFileIcon('unknown.bin'), '📁');
+
+console.log('✓ Passed: Download URLs correctly identified, byte formatting & icons verified');
+
 console.log('\nAll frontend logic tests passed successfully!');

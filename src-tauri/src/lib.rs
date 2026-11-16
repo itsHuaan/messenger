@@ -1,8 +1,10 @@
 use tauri::Manager;
 
 pub mod badge;
+pub mod download;
 pub mod notification;
 pub mod settings;
+
 
 #[tauri::command]
 fn greet(name: &str) -> String {
