@@ -180,7 +180,7 @@
         if (count >= 200) break;
       }
       localStorage.setItem(STORAGE_KEY_SEEN, JSON.stringify(obj));
-    } catch {}
+    } catch { }
   }
 
   // Populate known snippets immediately from localStorage
@@ -1507,7 +1507,7 @@
       ) {
         return true;
       }
-    } catch (_) {}
+    } catch (_) { }
     return false;
   }
 
@@ -1543,7 +1543,7 @@
       if (this.hasAttribute('download') || isDownloadUrl(this.href)) {
         this.removeAttribute('target');
       }
-    } catch (_) {}
+    } catch (_) { }
     return originalAnchorClick.apply(this, arguments);
   };
 
@@ -1572,13 +1572,13 @@
         // 2. Check if a download button was clicked in media viewer / attachments
         const downloadBtn = target.closest(
           '[role="button"][aria-label*="Download" i], ' +
-            '[role="button"][aria-label*="Tải xuống" i], ' +
-            '[role="button"][title*="Download" i], ' +
-            '[role="button"][title*="Tải xuống" i], ' +
-            '[aria-label*="Download photo" i], ' +
-            '[aria-label*="Download video" i], ' +
-            '[aria-label*="Tải ảnh xuống" i], ' +
-            '[aria-label*="Tải video xuống" i]'
+          '[role="button"][aria-label*="Tải xuống" i], ' +
+          '[role="button"][title*="Download" i], ' +
+          '[role="button"][title*="Tải xuống" i], ' +
+          '[aria-label*="Download photo" i], ' +
+          '[aria-label*="Download video" i], ' +
+          '[aria-label*="Tải ảnh xuống" i], ' +
+          '[aria-label*="Tải video xuống" i]'
         );
         if (downloadBtn) {
           console.log('[Messenger Desktop] Download button activated in UI');
@@ -1702,7 +1702,7 @@
 
         const cancelBtn = card.querySelector('.md-dl-cancel-btn');
         cancelBtn.addEventListener('click', () => {
-          invoke('cancel_download', { id: payload.id }).catch(() => {});
+          invoke('cancel_download', { id: payload.id }).catch(() => { });
           removeCard(payload.id);
         });
 
@@ -1763,7 +1763,7 @@
         // Automatically dismiss completed card after 10 seconds
         setTimeout(() => {
           removeCard(payload.id);
-        }, 10000);
+        }, 3000);
       } else if (status === 'error') {
         barFill.style.background = '#fa383e';
         barFill.style.animation = 'none';
@@ -1772,7 +1772,7 @@
         percentText.textContent = 'Error';
         setTimeout(() => {
           removeCard(payload.id);
-        }, 8000);
+        }, 3000);
       }
     }
 
