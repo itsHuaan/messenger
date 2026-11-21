@@ -898,37 +898,53 @@
         left: 0;
         width: 100vw;
         height: 100vh;
-        background: rgba(0, 0, 0, 0.55);
-        backdrop-filter: blur(4px);
-        z-index: 1000000;
+        background: rgba(0, 0, 0, 0.65);
+        backdrop-filter: blur(6px);
+        z-index: 2147483646;
         align-items: center;
         justify-content: center;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        overscroll-behavior: contain;
       }
       #md-settings-card {
         background: #242526;
         color: #e4e6eb;
-        width: 420px;
-        max-width: 90vw;
-        border-radius: 12px;
-        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        padding: 24px;
-        animation: md-slide-in 0.2s ease-out;
+        width: 70vw;
+        height: 70vh;
+        min-width: min(560px, calc(100vw - 32px));
+        max-width: min(960px, calc(100vw - 32px));
+        min-height: min(440px, calc(100vh - 32px));
+        max-height: min(800px, calc(100vh - 32px));
+        border-radius: 14px;
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+        border: 1px solid #3a3b3c;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        animation: md-card-pop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+        overscroll-behavior: contain;
       }
-      @keyframes md-slide-in {
-        from { opacity: 0; transform: translateY(-16px); }
-        to { opacity: 1; transform: translateY(0); }
+      @keyframes md-card-pop {
+        from { opacity: 0; transform: scale(0.96) translateY(8px); }
+        to { opacity: 1; transform: scale(1) translateY(0); }
       }
       .md-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 20px;
+        padding: 14px 20px;
+        background: #242526;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        flex-shrink: 0;
+      }
+      .md-header-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
       }
       .md-header h2 {
         margin: 0;
-        font-size: 18px;
+        font-size: 17px;
         font-weight: 600;
         color: #fff;
       }
@@ -936,21 +952,138 @@
         background: transparent;
         border: none;
         color: #b0b3b8;
-        font-size: 20px;
+        font-size: 22px;
         cursor: pointer;
-        padding: 4px;
+        padding: 4px 8px;
         line-height: 1;
+        border-radius: 6px;
+        transition: background-color 0.15s, color 0.15s;
       }
-      .md-close:hover { color: #fff; }
+      .md-close:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.1);
+      }
+      #md-settings-body {
+        display: flex;
+        flex: 1;
+        min-height: 0;
+        min-width: 0;
+        overflow: hidden;
+      }
+      #md-sidebar {
+        width: 180px;
+        flex-shrink: 0;
+        background: #1c1d1e;
+        border-right: 1px solid rgba(255, 255, 255, 0.08);
+        padding: 12px 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
+      .md-nav-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 12px;
+        border-radius: 8px;
+        background: transparent;
+        border: none;
+        color: #b0b3b8;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        text-align: left;
+        width: 100%;
+        position: relative;
+        font-family: inherit;
+      }
+      .md-nav-item:hover {
+        background: rgba(255, 255, 255, 0.06);
+        color: #e4e6eb;
+      }
+      .md-nav-item.active {
+        background: #0084ff;
+        color: #ffffff;
+        font-weight: 600;
+      }
+      .md-nav-item svg {
+        width: 16px;
+        height: 16px;
+        fill: currentColor;
+        flex-shrink: 0;
+      }
+      .md-nav-badge {
+        margin-left: auto;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #0084ff;
+        display: none;
+      }
+      .md-nav-item.active .md-nav-badge {
+        background: #ffffff;
+      }
+      #md-content-area {
+        flex: 1;
+        min-width: 0;
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 22px 26px;
+        background: #242526;
+      }
+      #md-content-area::-webkit-scrollbar,
+      #md-sidebar::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      #md-content-area::-webkit-scrollbar-thumb,
+      #md-sidebar::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 3px;
+      }
+      #md-content-area::-webkit-scrollbar-thumb:hover,
+      #md-sidebar::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.25);
+      }
+      .md-tab-pane {
+        animation: md-pane-fade 0.18s ease;
+      }
+      @keyframes md-pane-fade {
+        from { opacity: 0; transform: translateY(4px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .md-pane-header {
+        margin-bottom: 16px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      .md-pane-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: #ffffff;
+        margin: 0;
+      }
+      .md-pane-desc {
+        font-size: 12px;
+        color: #b0b3b8;
+        margin: 4px 0 0 0;
+      }
       .md-row {
         display: flex;
         justify-content: space-between;
         align-items: center;
         padding: 12px 0;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      .md-row:last-child {
+        border-bottom: none;
       }
       .md-label {
-        font-size: 14px;
+        font-size: 13.5px;
         font-weight: 500;
         color: #e4e6eb;
       }
@@ -958,6 +1091,7 @@
         font-size: 12px;
         color: #b0b3b8;
         margin-top: 2px;
+        line-height: 1.35;
       }
       .md-switch {
         position: relative;
@@ -972,7 +1106,7 @@
         cursor: pointer;
         top: 0; left: 0; right: 0; bottom: 0;
         background-color: #3e4042;
-        transition: .3s;
+        transition: .25s;
         border-radius: 24px;
       }
       .md-slider:before {
@@ -983,7 +1117,7 @@
         left: 3px;
         bottom: 3px;
         background-color: white;
-        transition: .3s;
+        transition: .25s;
         border-radius: 50%;
       }
       input:checked + .md-slider { background-color: #0084ff; }
@@ -991,20 +1125,20 @@
       .md-btn-row {
         display: flex;
         gap: 10px;
-        margin-top: 20px;
+        margin-top: 18px;
       }
       .md-action-btn {
-        flex: 1;
-        padding: 10px;
+        padding: 8px 14px;
         border-radius: 8px;
         border: none;
         background: #3a3b3c;
         color: #e4e6eb;
-        font-size: 13px;
+        font-size: 12.5px;
         font-weight: 600;
         cursor: pointer;
         transition: background 0.2s, opacity 0.2s;
         text-align: center;
+        font-family: inherit;
       }
       .md-action-btn:hover { background: #4e4f50; }
       .md-action-btn:disabled {
@@ -1028,7 +1162,7 @@
       .md-section-divider {
         height: 1px;
         background: rgba(255, 255, 255, 0.08);
-        margin: 18px 0 16px 0;
+        margin: 16px 0;
       }
       .md-update-header {
         display: flex;
@@ -1046,6 +1180,99 @@
         background: #0084ff;
         border: 2px solid #1e1e1e;
         display: none;
+      }
+      .md-about-card {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 10px;
+        padding: 16px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 16px;
+      }
+      .md-about-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #0084ff 0%, #00c6ff 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .md-about-icon svg {
+        width: 24px;
+        height: 24px;
+        fill: #ffffff;
+      }
+      .md-link {
+        color: #0084ff;
+        text-decoration: none;
+        transition: color 0.15s;
+      }
+      .md-link:hover {
+        color: #2e89ff;
+        text-decoration: underline;
+      }
+      .md-spec-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+        margin-top: 14px;
+      }
+      .md-spec-item {
+        background: rgba(0, 0, 0, 0.25);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 8px;
+        padding: 10px 12px;
+      }
+      .md-spec-label {
+        font-size: 11px;
+        color: #8a8d91;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .md-spec-val {
+        font-size: 13px;
+        font-weight: 500;
+        color: #e4e6eb;
+        margin-top: 2px;
+      }
+
+      /* Responsive Compact Mode for Narrow Windows */
+      @media (max-width: 680px) {
+        #md-settings-card {
+          width: calc(100vw - 20px);
+          height: calc(100vh - 20px);
+          max-height: calc(100vh - 20px);
+        }
+        #md-settings-body {
+          flex-direction: column;
+        }
+        #md-sidebar {
+          width: 100%;
+          flex-direction: row;
+          border-right: none;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+          padding: 8px 10px;
+          gap: 6px;
+          overflow-x: auto;
+          overflow-y: hidden;
+          flex-shrink: 0;
+        }
+        .md-nav-item {
+          width: auto;
+          padding: 6px 12px;
+          font-size: 12px;
+          white-space: nowrap;
+        }
+        #md-content-area {
+          padding: 16px;
+        }
+        .md-spec-grid {
+          grid-template-columns: 1fr;
+        }
       }
     `;
 
@@ -1068,149 +1295,265 @@
     modal.innerHTML = `
       <div id="md-settings-card">
         <div class="md-header">
-          <h2>Messenger Desktop Settings</h2>
-          <button class="md-close" id="md-close-btn">&times;</button>
-        </div>
-        <div class="md-row">
-          <div>
-            <div class="md-label">Windows Toast Notifications</div>
-            <div class="md-sublabel">Show native alerts for incoming messages</div>
+          <div class="md-header-left">
+            <svg style="width:20px;height:20px;fill:#0084ff;" viewBox="0 0 24 24">
+              <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+            </svg>
+            <h2>Settings</h2>
           </div>
-          <label class="md-switch">
-            <input type="checkbox" id="md-toggle-notifications" checked>
-            <span class="md-slider"></span>
-          </label>
-        </div>
-        <div class="md-row">
-          <div>
-            <div class="md-label">Taskbar Unread Badge</div>
-            <div class="md-sublabel">Display red dot / unread count on taskbar icon</div>
-          </div>
-          <label class="md-switch">
-            <input type="checkbox" id="md-toggle-badge" checked>
-            <span class="md-slider"></span>
-          </label>
-        </div>
-        <div class="md-row">
-          <div>
-            <div class="md-label">Hide message content in notifications</div>
-            <div class="md-sublabel">Show sender names without displaying message previews</div>
-          </div>
-          <label class="md-switch">
-            <input type="checkbox" id="md-toggle-hide-content">
-            <span class="md-slider"></span>
-          </label>
-        </div>
-        <div class="md-row">
-          <div>
-            <div class="md-label">Run at startup</div>
-            <div class="md-sublabel">Launch Messenger automatically when Windows starts</div>
-          </div>
-          <label class="md-switch">
-            <input type="checkbox" id="md-toggle-startup">
-            <span class="md-slider"></span>
-          </label>
-        </div>
-        <div class="md-row">
-          <div>
-            <div class="md-label">Minimize to Tray</div>
-            <div class="md-sublabel">Closing the window hides it to the system tray instead of exiting</div>
-          </div>
-          <label class="md-switch">
-            <input type="checkbox" id="md-toggle-minimize-tray" checked>
-            <span class="md-slider"></span>
-          </label>
-        </div>
-        <div class="md-row" id="md-row-start-minimized">
-          <div>
-            <div class="md-label">Start Minimized to Tray</div>
-            <div class="md-sublabel">Launch Messenger hidden in system tray (requires Minimize to Tray)</div>
-          </div>
-          <label class="md-switch">
-            <input type="checkbox" id="md-toggle-start-minimized">
-            <span class="md-slider"></span>
-          </label>
-        </div>
-        <div class="md-row">
-          <div>
-            <div class="md-label">Unread badge color</div>
-            <div class="md-sublabel">Color of the taskbar notification dot</div>
-          </div>
-          <input type="color" id="md-badge-color" value="#F52D2D" title="Pick badge color" style="width:36px;height:28px;border:none;background:none;cursor:pointer;padding:0;border-radius:6px;">
-        </div>
-        <div class="md-btn-row">
-          <button class="md-action-btn" id="md-test-notif-btn">Test Notification</button>
-          <button class="md-action-btn" id="md-test-badge-btn">Test Unread Badge</button>
+          <button class="md-close" id="md-close-btn" title="Close (Esc)">&times;</button>
         </div>
 
-        <div class="md-section-divider"></div>
+        <div id="md-settings-body">
+          <!-- Category Navigation Sidebar -->
+          <nav id="md-sidebar" aria-label="Settings Categories">
+            <button class="md-nav-item active" data-tab="general">
+              <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+              <span>General</span>
+            </button>
+            <button class="md-nav-item" data-tab="notifications">
+              <svg viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6z"/></svg>
+              <span>Notifications</span>
+            </button>
+            <button class="md-nav-item" data-tab="downloads">
+              <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+              <span>Downloads</span>
+            </button>
+            <button class="md-nav-item" data-tab="updates">
+              <svg viewBox="0 0 24 24"><path d="M21 10.12h-6.78l2.74-2.82c-2.73-2.7-7.15-2.8-9.88-.1-2.73 2.71-2.73 7.08 0 9.79s7.15 2.71 9.88 0C18.32 15.65 19 14.08 19 12.1h2c0 2.49-.95 4.83-2.68 6.57-3.71 3.7-9.73 3.7-13.45 0-3.71-3.7-3.71-9.71 0-13.42 3.71-3.7 9.73-3.7 13.45 0l2.68-2.69v7.56z"/></svg>
+              <span>Updates</span>
+              <span class="md-nav-badge" id="md-nav-update-indicator"></span>
+            </button>
+            <button class="md-nav-item" data-tab="about">
+              <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+              <span>About</span>
+            </button>
+          </nav>
 
-        <!-- Downloads Section -->
-        <div class="md-download-section">
-          <div style="margin-bottom: 8px;">
-            <div class="md-label" style="font-size: 15px; font-weight: 600;">Downloads</div>
-          </div>
-          <div class="md-row" style="flex-direction: column; align-items: stretch; gap: 8px; padding-bottom: 14px;">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
-              <div style="min-width: 0; flex: 1;">
-                <div class="md-label">Download location</div>
-                <div class="md-sublabel" id="md-download-path-label" style="word-break: break-all; margin-top: 6px; font-family: Consolas, monospace; font-size: 11px; background: rgba(0,0,0,0.3); padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); color: #ced0d4;">
-                  Loading...
+          <!-- Scrollable Category Content -->
+          <main id="md-content-area">
+            <!-- 1. General Category -->
+            <div class="md-tab-pane" id="md-tab-general">
+              <div class="md-pane-header">
+                <h3 class="md-pane-title">General Settings</h3>
+                <p class="md-pane-desc">Manage startup behavior and system tray integration</p>
+              </div>
+
+              <div class="md-row">
+                <div>
+                  <div class="md-label">Run at startup</div>
+                  <div class="md-sublabel">Launch Messenger automatically when Windows starts</div>
+                </div>
+                <label class="md-switch">
+                  <input type="checkbox" id="md-toggle-startup">
+                  <span class="md-slider"></span>
+                </label>
+              </div>
+
+              <div class="md-row">
+                <div>
+                  <div class="md-label">Minimize to Tray</div>
+                  <div class="md-sublabel">Closing the window hides it to the system tray instead of exiting</div>
+                </div>
+                <label class="md-switch">
+                  <input type="checkbox" id="md-toggle-minimize-tray" checked>
+                  <span class="md-slider"></span>
+                </label>
+              </div>
+
+              <div class="md-row" id="md-row-start-minimized">
+                <div>
+                  <div class="md-label">Start Minimized to Tray</div>
+                  <div class="md-sublabel">Launch Messenger hidden in system tray (requires Minimize to Tray)</div>
+                </div>
+                <label class="md-switch">
+                  <input type="checkbox" id="md-toggle-start-minimized">
+                  <span class="md-slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <!-- 2. Notifications Category -->
+            <div class="md-tab-pane" id="md-tab-notifications" style="display: none;">
+              <div class="md-pane-header">
+                <h3 class="md-pane-title">Notifications & Badge</h3>
+                <p class="md-pane-desc">Configure native Windows alerts and taskbar indicators</p>
+              </div>
+
+              <div class="md-row">
+                <div>
+                  <div class="md-label">Windows Toast Notifications</div>
+                  <div class="md-sublabel">Show native alerts for incoming messages</div>
+                </div>
+                <label class="md-switch">
+                  <input type="checkbox" id="md-toggle-notifications" checked>
+                  <span class="md-slider"></span>
+                </label>
+              </div>
+
+              <div class="md-row">
+                <div>
+                  <div class="md-label">Taskbar Unread Badge</div>
+                  <div class="md-sublabel">Display red dot / unread count on taskbar icon</div>
+                </div>
+                <label class="md-switch">
+                  <input type="checkbox" id="md-toggle-badge" checked>
+                  <span class="md-slider"></span>
+                </label>
+              </div>
+
+              <div class="md-row">
+                <div>
+                  <div class="md-label">Hide message content in notifications</div>
+                  <div class="md-sublabel">Show sender names without displaying message previews for privacy</div>
+                </div>
+                <label class="md-switch">
+                  <input type="checkbox" id="md-toggle-hide-content">
+                  <span class="md-slider"></span>
+                </label>
+              </div>
+
+              <div class="md-row">
+                <div>
+                  <div class="md-label">Unread badge color</div>
+                  <div class="md-sublabel">Color of the taskbar notification dot</div>
+                </div>
+                <input type="color" id="md-badge-color" value="#F52D2D" title="Pick badge color" style="width:36px;height:28px;border:none;background:none;cursor:pointer;padding:0;border-radius:6px;">
+              </div>
+
+              <div class="md-btn-row">
+                <button class="md-action-btn" id="md-test-notif-btn" style="flex:1;">Test Notification</button>
+                <button class="md-action-btn" id="md-test-badge-btn" style="flex:1;">Test Unread Badge</button>
+              </div>
+            </div>
+
+            <!-- 3. Downloads Category -->
+            <div class="md-tab-pane" id="md-tab-downloads" style="display: none;">
+              <div class="md-pane-header">
+                <h3 class="md-pane-title">Downloads</h3>
+                <p class="md-pane-desc">Choose where downloaded files are saved on your computer</p>
+              </div>
+
+              <div class="md-row" style="flex-direction: column; align-items: stretch; gap: 8px; padding-bottom: 14px;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+                  <div style="min-width: 0; flex: 1;">
+                    <div class="md-label">Download location</div>
+                    <div class="md-sublabel" id="md-download-path-label" style="word-break: break-all; margin-top: 6px; font-family: Consolas, monospace; font-size: 11.5px; background: rgba(0,0,0,0.3); padding: 7px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); color: #ced0d4;">
+                      Loading...
+                    </div>
+                  </div>
+                  <div style="display: flex; gap: 6px; flex-shrink: 0; margin-top: 2px;">
+                    <button class="md-action-btn md-btn-secondary" id="md-change-download-dir-btn" style="padding: 6px 12px; font-size: 12px;" title="Choose a new folder">Change</button>
+                    <button class="md-action-btn md-btn-secondary" id="md-open-download-dir-btn" style="padding: 6px 10px; font-size: 12px;" title="Open folder in Windows Explorer">Open</button>
+                    <button class="md-action-btn md-btn-secondary" id="md-reset-download-dir-btn" style="display: none; padding: 6px 10px; font-size: 12px;" title="Reset to default Downloads folder">Reset</button>
+                  </div>
                 </div>
               </div>
-              <div style="display: flex; gap: 6px; flex-shrink: 0; margin-top: 2px;">
-                <button class="md-action-btn md-btn-secondary" id="md-change-download-dir-btn" style="padding: 6px 12px; font-size: 12px;" title="Choose a new folder">Change</button>
-                <button class="md-action-btn md-btn-secondary" id="md-open-download-dir-btn" style="padding: 6px 10px; font-size: 12px;" title="Open folder in Windows Explorer">Open</button>
-                <button class="md-action-btn md-btn-secondary" id="md-reset-download-dir-btn" style="display: none; padding: 6px 10px; font-size: 12px;" title="Reset to default Downloads folder">Reset</button>
-              </div>
-            </div>
-          </div>
-          <div class="md-row">
-            <div>
-              <div class="md-label">Ask where to save each file before downloading</div>
-              <div class="md-sublabel">Show save file dialog for each download instead of saving automatically</div>
-            </div>
-            <label class="md-switch">
-              <input type="checkbox" id="md-toggle-ask-download">
-              <span class="md-slider"></span>
-            </label>
-          </div>
-        </div>
 
-        <div class="md-section-divider"></div>
-
-        <div class="md-update-section">
-          <div class="md-update-header">
-            <div>
-              <div class="md-label">Software Updates</div>
-              <div class="md-sublabel" id="md-app-version-label">Messenger Desktop</div>
-              <div class="md-sublabel" id="md-last-check-label" style="font-size:11px;color:#8a8d91;margin-top:2px;">Last checked: Never</div>
-            </div>
-            <button class="md-action-btn md-btn-secondary" id="md-check-update-btn" style="flex:0 0 auto;padding:8px 14px;">Check for Updates</button>
-          </div>
-
-          <!-- Update status and progress panel -->
-          <div id="md-update-box" style="display:none;margin-top:14px;padding:12px;border-radius:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);">
-            <div id="md-update-status-text" style="font-size:13px;font-weight:500;"></div>
-            
-            <div id="md-update-notes-container" style="display:none;margin-top:8px;padding:8px 10px;border-radius:6px;background:rgba(0,0,0,0.3);font-size:12px;color:#ced0d4;max-height:110px;overflow-y:auto;white-space:pre-wrap;line-height:1.4;"></div>
-
-            <div id="md-update-progress-container" style="display:none;margin-top:10px;">
-              <div style="display:flex;justify-content:space-between;font-size:11px;color:#b0b3b8;margin-bottom:4px;">
-                <span id="md-update-progress-label">Downloading update...</span>
-                <span id="md-update-progress-percent">0%</span>
-              </div>
-              <div style="width:100%;height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;">
-                <div id="md-update-progress-bar" style="width:0%;height:100%;background:#0084ff;transition:width 0.15s ease;"></div>
+              <div class="md-row">
+                <div>
+                  <div class="md-label">Ask where to save each file before downloading</div>
+                  <div class="md-sublabel">Show save file dialog for each download instead of saving automatically</div>
+                </div>
+                <label class="md-switch">
+                  <input type="checkbox" id="md-toggle-ask-download">
+                  <span class="md-slider"></span>
+                </label>
               </div>
             </div>
 
-            <div id="md-update-actions" style="display:flex;gap:8px;margin-top:10px;">
-              <button class="md-action-btn md-btn-primary" id="md-download-update-btn" style="display:none;">Download and Install</button>
-              <button class="md-action-btn md-btn-primary" id="md-restart-update-btn" style="display:none;">Restart to Update</button>
-              <button class="md-action-btn" id="md-retry-update-btn" style="display:none;">Retry</button>
+            <!-- 4. Updates Category -->
+            <div class="md-tab-pane" id="md-tab-updates" style="display: none;">
+              <div class="md-pane-header">
+                <h3 class="md-pane-title">Software Updates</h3>
+                <p class="md-pane-desc">Check for new releases and manage application updates</p>
+              </div>
+
+              <div class="md-update-header">
+                <div>
+                  <div class="md-label" id="md-app-version-label">Messenger Desktop</div>
+                  <div class="md-sublabel" id="md-last-check-label" style="font-size:11.5px;color:#8a8d91;margin-top:2px;">Last checked: Never</div>
+                </div>
+                <button class="md-action-btn md-btn-secondary" id="md-check-update-btn" style="flex:0 0 auto;padding:8px 14px;">Check for Updates</button>
+              </div>
+
+              <!-- Update status and progress panel -->
+              <div id="md-update-box" style="display:none;margin-top:14px;padding:14px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);">
+                <div id="md-update-status-text" style="font-size:13px;font-weight:500;"></div>
+                
+                <div id="md-update-notes-container" style="display:none;margin-top:8px;padding:8px 10px;border-radius:6px;background:rgba(0,0,0,0.3);font-size:12px;color:#ced0d4;max-height:110px;overflow-y:auto;white-space:pre-wrap;line-height:1.4;"></div>
+
+                <div id="md-update-progress-container" style="display:none;margin-top:10px;">
+                  <div style="display:flex;justify-content:space-between;font-size:11px;color:#b0b3b8;margin-bottom:4px;">
+                    <span id="md-update-progress-label">Downloading update...</span>
+                    <span id="md-update-progress-percent">0%</span>
+                  </div>
+                  <div style="width:100%;height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;">
+                    <div id="md-update-progress-bar" style="width:0%;height:100%;background:#0084ff;transition:width 0.15s ease;"></div>
+                  </div>
+                </div>
+
+                <div id="md-update-actions" style="display:flex;gap:8px;margin-top:12px;">
+                  <button class="md-action-btn md-btn-primary" id="md-download-update-btn" style="display:none;">Download and Install</button>
+                  <button class="md-action-btn md-btn-primary" id="md-restart-update-btn" style="display:none;">Restart to Update</button>
+                  <button class="md-action-btn" id="md-retry-update-btn" style="display:none;">Retry</button>
+                </div>
+              </div>
             </div>
-          </div>
+
+            <!-- 5. About Category -->
+            <div class="md-tab-pane" id="md-tab-about" style="display: none;">
+              <div class="md-pane-header">
+                <h3 class="md-pane-title">About</h3>
+                <p class="md-pane-desc">Application details, links, and system information</p>
+              </div>
+
+              <div class="md-about-card">
+                <div class="md-about-icon">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M12 2C6.48 2 2 6.03 2 11c0 2.87 1.48 5.43 3.79 7.08L5 22l4.13-1.84C10.05 20.65 11 20.8 12 20.8c5.52 0 10-4.03 10-9s-4.48-9-10-9zm1.09 12.22l-2.61-2.78-5.1 2.78 5.61-5.95 2.67 2.78 5.04-2.78-5.61 5.95z"/>
+                  </svg>
+                </div>
+                <div>
+                  <div style="font-size:15px;font-weight:600;color:#fff;">Messenger Desktop</div>
+                  <div style="font-size:12px;color:#8a8d91;margin-top:2px;" id="md-about-version-label">v0.0.8 (Tauri v2)</div>
+                </div>
+              </div>
+
+              <div class="md-row" style="border-bottom:none;padding:4px 0 10px 0;">
+                <div class="md-sublabel" style="font-size:12.5px;color:#b0b3b8;line-height:1.5;">
+                  A fast, privacy-conscious native desktop client for Facebook Messenger with native Windows toast notifications, system tray badge integration, download manager, and drag-and-drop file support.
+                </div>
+              </div>
+
+              <div class="md-spec-grid">
+                <div class="md-spec-item">
+                  <div class="md-spec-label">Framework</div>
+                  <div class="md-spec-val">Tauri v2 + WebView2</div>
+                </div>
+                <div class="md-spec-item">
+                  <div class="md-spec-label">Platform</div>
+                  <div class="md-spec-val">Microsoft Windows (x64)</div>
+                </div>
+                <div class="md-spec-item">
+                  <div class="md-spec-label">License</div>
+                  <div class="md-spec-val">MIT License</div>
+                </div>
+                <div class="md-spec-item">
+                  <div class="md-spec-label">Shortcut</div>
+                  <div class="md-spec-val"><kbd style="background:#3a3b3c;padding:2px 6px;border-radius:4px;font-size:11px;">Ctrl</kbd> + <kbd style="background:#3a3b3c;padding:2px 6px;border-radius:4px;font-size:11px;">,</kbd></div>
+                </div>
+              </div>
+
+              <div class="md-section-divider"></div>
+
+              <div style="display:flex;gap:16px;font-size:12.5px;">
+                <a href="https://github.com/itsHuaan/messenger" target="_blank" class="md-link">GitHub Repository ↗</a>
+                <a href="https://github.com/itsHuaan/messenger/releases" target="_blank" class="md-link">Releases & Changelog ↗</a>
+                <a href="https://github.com/itsHuaan/messenger/issues" target="_blank" class="md-link">Report an Issue ↗</a>
+              </div>
+            </div>
+          </main>
         </div>
       </div>
     `;
@@ -1219,8 +1562,83 @@
     container.appendChild(modal);
     document.body.appendChild(container);
 
+    // Stop click events inside the card from propagating to backdrop
+    const settingsCard = document.getElementById('md-settings-card');
+    if (settingsCard) {
+      settingsCard.addEventListener('click', e => {
+        e.stopPropagation();
+      });
+    }
+
+    // Category navigation handling
+    const navButtons = modal.querySelectorAll('.md-nav-item');
+    const tabPanes = modal.querySelectorAll('.md-tab-pane');
+
+    function selectCategory(tabId) {
+      navButtons.forEach(btn => {
+        if (btn.dataset.tab === tabId) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+
+      tabPanes.forEach(pane => {
+        if (pane.id === `md-tab-${tabId}`) {
+          pane.style.display = 'block';
+        } else {
+          pane.style.display = 'none';
+        }
+      });
+
+      const contentArea = document.getElementById('md-content-area');
+      if (contentArea) {
+        contentArea.scrollTop = 0;
+      }
+    }
+
+    navButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectCategory(btn.dataset.tab);
+      });
+    });
+
+    // Independent Scroll Isolation: prevent wheel and touch chaining from leaking to Messenger
+    function handleModalWheel(e) {
+      const scrollable = e.target.closest('#md-content-area, #md-sidebar');
+      if (!scrollable) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
+      if (scrollable.scrollHeight <= scrollable.clientHeight) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
+      const delta = e.deltaY;
+      const atTop = scrollable.scrollTop <= 0 && delta < 0;
+      const atBottom = scrollable.scrollTop + scrollable.clientHeight >= scrollable.scrollHeight - 1 && delta > 0;
+
+      if (atTop || atBottom) {
+        e.preventDefault();
+      }
+      e.stopPropagation();
+    }
+
+    function handleModalTouch(e) {
+      const scrollable = e.target.closest('#md-content-area, #md-sidebar');
+      if (!scrollable) {
+        e.preventDefault();
+      }
+      e.stopPropagation();
+    }
+
     // Event listeners
     let defaultDownloadDir = '';
+    let lastFocusedElement = null;
 
     const updateDownloadDirUI = () => {
       const pathLabel = document.getElementById('md-download-path-label');
@@ -1243,6 +1661,8 @@
     };
 
     const openModal = () => {
+      lastFocusedElement = document.activeElement;
+
       document.getElementById('md-toggle-notifications').checked = !!appSettings.notifications_enabled;
       document.getElementById('md-toggle-badge').checked = !!appSettings.badge_enabled;
       document.getElementById('md-toggle-hide-content').checked = !!appSettings.hide_message_content;
@@ -1279,7 +1699,10 @@
         .then(status => {
           if (status) {
             if (status.current_version) {
-              document.getElementById('md-app-version-label').textContent = `Messenger Desktop v${status.current_version}`;
+              const versionStr = `Messenger Desktop v${status.current_version}`;
+              document.getElementById('md-app-version-label').textContent = versionStr;
+              const aboutVersion = document.getElementById('md-about-version-label');
+              if (aboutVersion) aboutVersion.textContent = `v${status.current_version} (Tauri v2)`;
             }
             if (status.last_check) {
               document.getElementById('md-last-check-label').textContent = `Last checked: ${status.last_check}`;
@@ -1289,9 +1712,18 @@
         .catch(console.error);
 
       modal.style.display = 'flex';
+      modal.addEventListener('wheel', handleModalWheel, { passive: false });
+      modal.addEventListener('touchmove', handleModalTouch, { passive: false });
     };
 
-    const closeModal = () => { modal.style.display = 'none'; };
+    const closeModal = () => {
+      modal.style.display = 'none';
+      modal.removeEventListener('wheel', handleModalWheel);
+      modal.removeEventListener('touchmove', handleModalTouch);
+      if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
+        try { lastFocusedElement.focus(); } catch (_) {}
+      }
+    };
 
     btn.addEventListener('click', openModal);
     document.getElementById('md-close-btn').addEventListener('click', closeModal);
@@ -1301,6 +1733,9 @@
       if ((e.ctrlKey && e.key === ',') || (e.ctrlKey && e.shiftKey && (e.key === 'S' || e.key === 's'))) {
         e.preventDefault();
         if (modal.style.display === 'flex') closeModal(); else openModal();
+      } else if (e.key === 'Escape' && modal.style.display === 'flex') {
+        e.preventDefault();
+        closeModal();
       }
     });
 
@@ -1539,6 +1974,8 @@
 
           if (info.available) {
             indicator.style.display = 'block';
+            const navUpdateDot = document.getElementById('md-nav-update-indicator');
+            if (navUpdateDot) navUpdateDot.style.display = 'inline-block';
             statusText.textContent = `Update available: v${info.version}`;
             statusText.style.color = '#31a24c';
 
@@ -1552,6 +1989,8 @@
             downloadBtn.style.display = 'inline-block';
           } else {
             indicator.style.display = 'none';
+            const navUpdateDot = document.getElementById('md-nav-update-indicator');
+            if (navUpdateDot) navUpdateDot.style.display = 'none';
             statusText.textContent = `You're up to date! Version ${info.current_version} is the latest release.`;
             statusText.style.color = '#2e89ff';
           }
@@ -1620,12 +2059,14 @@
     // Expose programmatic trigger for manual updater (used by system tray context menu)
     window.__MESSENGER_DESKTOP_CHECK_UPDATES__ = () => {
       openModal();
+      selectCategory('updates');
       performUpdateCheck();
     };
 
     if (window.__TAURI__ && window.__TAURI__.event) {
       window.__TAURI__.event.listen('trigger-check-updates', () => {
         openModal();
+        selectCategory('updates');
         performUpdateCheck();
       }).catch(console.error);
     }
