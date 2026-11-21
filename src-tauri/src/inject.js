@@ -852,6 +852,25 @@
     }, 300);
   };
 
+  function formatLocalTimestamp(isoString) {
+    const date = new Date(isoString);
+    if (isNaN(date.getTime())) return isoString;
+
+    const pad = (n) => String(n).padStart(2, '0');
+    const year = date.getFullYear();
+    const month = pad(date.getMonth() + 1);
+    const day = pad(date.getDate());
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    const seconds = pad(date.getSeconds());
+
+    const tz = new Intl.DateTimeFormat('en-US', { timeZoneName: 'short' })
+      .formatToParts(date)
+      .find((part) => part.type === 'timeZoneName')?.value || '';
+
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds} ${tz}`.trim();
+  }
+
   // ==========================================
   // Settings UI Injection
   // ==========================================
@@ -1704,7 +1723,7 @@
               if (aboutVersion) aboutVersion.textContent = `v${status.current_version} (Tauri v2)`;
             }
             if (status.last_check) {
-              document.getElementById('md-last-check-label').textContent = `Last checked: ${status.last_check}`;
+              document.getElementById('md-last-check-label').textContent = `Last checked: ${formatLocalTimestamp(status.last_check)}`;
             }
           }
         })
