@@ -191,3 +191,28 @@ jobs:
           }
           
           Write-Host "[SUCCESS] All required release artifacts and updater manifests verified successfully!"
+          
+      - name: Cleanup Old Tags & Releases
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $allTags = @(git tag -l "v*" --sort=-v:refname | Where-Object { $_ -match '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$' })
+          if ($allTags.Count -gt 3) {
+            $oldTags = $allTags | Select-Object -Skip 3
+            $headers = @{
+              "Authorization" = "Bearer $env:GITHUB_TOKEN"
+              "Accept" = "application/vnd.github+json"
+              "User-Agent" = "GitHub-Actions-Tag-Cleanup"
+            }
+            foreach ($oldTag in $oldTags) {
+              Write-Host "Removing old tag and release: $oldTag"
+              try {
+                $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/tags/$oldTag" -Headers $headers -ErrorAction Stop
+                if ($rel.id) {
+                  Invoke-RestMethod -Method Delete -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/$($rel.id)" -Headers $headers -ErrorAction SilentlyContinue
+                }
+              } catch {}
+              git push origin ":refs/tags/$oldTag"
+            }
+          }
