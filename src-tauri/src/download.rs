@@ -604,7 +604,7 @@ pub fn open_downloaded_file(path: String) -> Result<(), String> {
         return Err("File path does not exist or is invalid.".to_string());
     }
 
-    tauri_plugin_opener::open_path(path, None::<&str>)
+    tauri_plugin_opener::open_path(&p, None::<&str>)
         .map_err(|e| format!("Failed to open file: {e}"))
 }
 
@@ -615,10 +615,15 @@ pub fn show_in_folder(path: String) -> Result<(), String> {
         return Err("File path does not exist or is invalid.".to_string());
     }
 
-    std::process::Command::new("explorer")
-        .args(["/select,", &path])
-        .spawn()
-        .map_err(|e| format!("Failed to reveal file in Windows Explorer: {e}"))?;
+    // Try revealing via tauri_plugin_opener (SHOpenFolderAndSelectItems on Windows),
+    // and fall back to explorer.exe /select,"path" if needed.
+    if let Err(e) = tauri_plugin_opener::reveal_item_in_dir(&p) {
+        eprintln!("[Messenger Desktop] reveal_item_in_dir error: {e}, falling back to explorer.exe");
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", p.display()))
+            .spawn()
+            .map_err(|spawn_err| format!("Failed to reveal file in Windows Explorer: {spawn_err}"))?;
+    }
 
     Ok(())
 }

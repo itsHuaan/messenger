@@ -1688,7 +1688,7 @@
       style.id = 'md-download-styles';
       style.textContent = `
         @keyframes md-download-slide-in {
-          from { opacity: 0; transform: translateY(16px); }
+          from { opacity: 0; transform: translateY(-16px); }
           to { opacity: 1; transform: translateY(0); }
         }
         @keyframes md-indeterminate-bar {
@@ -1696,6 +1696,9 @@
           50% { background-position: 100% 50%; }
           100% { background-position: 0% 50%; }
         }
+        .md-dl-open-btn:hover { background: #1877f2 !important; }
+        .md-dl-folder-btn:hover { background: #4e4f50 !important; }
+        .md-dl-cancel-btn:hover { color: #ffffff !important; background: rgba(255, 255, 255, 0.1) !important; }
       `;
       document.head.appendChild(style);
     }
@@ -1704,8 +1707,8 @@
     container.id = 'md-download-manager-container';
     container.style.cssText = `
       position: fixed;
-      bottom: 24px;
-      right: 24px;
+      top: 16px;
+      right: 16px;
       width: 360px;
       max-width: calc(100vw - 48px);
       z-index: 2147483647;
@@ -1773,7 +1776,7 @@
                 ${payload.filename}
               </span>
             </div>
-            <button class="md-dl-cancel-btn" title="Cancel Download" style="background: transparent; border: none; color: #b0b3b8; cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 4px;">✕</button>
+            <button class="md-dl-cancel-btn" title="Cancel Download" style="background: transparent; border: none; color: #b0b3b8; cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 4px; transition: all 0.15s ease;">✕</button>
           </div>
           <div class="md-dl-progress-bar-bg" style="width: 100%; height: 6px; background: #3a3b3c; border-radius: 3px; overflow: hidden; position: relative;">
             <div class="md-dl-progress-bar-fill" style="width: 0%; height: 100%; background: #2e89ff; border-radius: 3px; transition: width 0.2s ease;"></div>
@@ -1783,19 +1786,24 @@
             <span class="md-dl-percent-text">0%</span>
           </div>
           <div class="md-dl-actions" style="display: none; align-items: center; gap: 10px; margin-top: 2px;">
-            <button class="md-dl-open-btn" style="background: #2e89ff; color: white; border: none; border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 500; cursor: pointer;">Open</button>
-            <button class="md-dl-folder-btn" style="background: #3a3b3c; color: #e4e6eb; border: none; border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 500; cursor: pointer;">Show in Folder</button>
+            <button class="md-dl-open-btn" style="background: #2e89ff; color: white; border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 500; cursor: pointer; transition: background 0.15s ease;">Open</button>
+            <button class="md-dl-folder-btn" style="background: #3a3b3c; color: #e4e6eb; border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 500; cursor: pointer; transition: background 0.15s ease;">Show in Folder</button>
           </div>
         `;
 
         const cancelBtn = card.querySelector('.md-dl-cancel-btn');
-        cancelBtn.addEventListener('click', () => {
+        cancelBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
           invoke('cancel_download', { id: payload.id }).catch(() => { });
           removeCard(payload.id);
         });
 
         container.appendChild(card);
         activeDownloads.set(payload.id, card);
+      }
+
+      if (payload.path) {
+        card.dataset.filePath = payload.path;
       }
 
       const barFill = card.querySelector('.md-dl-progress-bar-fill');
@@ -1831,27 +1839,61 @@
         statusText.style.color = '#31a24c';
         statusText.textContent = `Completed (${formatBytes(payload.total_bytes)})`;
         percentText.textContent = '100%';
-        cancelBtn.style.display = 'none';
         actionsDiv.style.display = 'flex';
 
+        // Keep close button so user can dismiss anytime
+        cancelBtn.title = 'Dismiss';
+        cancelBtn.style.display = 'block';
+        cancelBtn.onclick = (e) => {
+          e.stopPropagation();
+          removeCard(payload.id);
+        };
+
         const openBtn = card.querySelector('.md-dl-open-btn');
-        openBtn.onclick = () => {
-          invoke('open_downloaded_file', { path: payload.path }).catch(err => {
-            alert('Could not open file: ' + err);
+        openBtn.onclick = (e) => {
+          e.stopPropagation();
+          const targetPath = payload.path || card.dataset.filePath;
+          if (!targetPath) return;
+          invoke('open_downloaded_file', { path: targetPath }).catch(err => {
+            console.error('[Messenger Desktop] open_downloaded_file error:', err);
+            statusText.style.color = '#fa383e';
+            statusText.textContent = 'Could not open file';
           });
         };
 
         const folderBtn = card.querySelector('.md-dl-folder-btn');
-        folderBtn.onclick = () => {
-          invoke('show_in_folder', { path: payload.path }).catch(err => {
-            alert('Could not reveal folder: ' + err);
+        folderBtn.onclick = (e) => {
+          e.stopPropagation();
+          const targetPath = payload.path || card.dataset.filePath;
+          if (!targetPath) return;
+          invoke('show_in_folder', { path: targetPath }).catch(err => {
+            console.error('[Messenger Desktop] show_in_folder error:', err);
+            statusText.style.color = '#fa383e';
+            statusText.textContent = 'Could not reveal folder';
           });
         };
 
-        // Automatically dismiss completed card after 10 seconds
-        setTimeout(() => {
-          removeCard(payload.id);
-        }, 3000);
+        // Automatically dismiss completed card after 8 seconds, pausing on hover
+        let dismissTimer = null;
+        const scheduleDismiss = (ms) => {
+          if (dismissTimer) clearTimeout(dismissTimer);
+          dismissTimer = setTimeout(() => {
+            removeCard(payload.id);
+          }, ms);
+        };
+
+        card.onmouseenter = () => {
+          if (dismissTimer) {
+            clearTimeout(dismissTimer);
+            dismissTimer = null;
+          }
+        };
+
+        card.onmouseleave = () => {
+          scheduleDismiss(3000);
+        };
+
+        scheduleDismiss(5000);
       } else if (status === 'error') {
         barFill.style.background = '#fa383e';
         barFill.style.animation = 'none';
@@ -1860,7 +1902,7 @@
         percentText.textContent = 'Error';
         setTimeout(() => {
           removeCard(payload.id);
-        }, 3000);
+        }, 5000);
       }
     }
 
@@ -1868,7 +1910,7 @@
       const card = activeDownloads.get(id);
       if (card) {
         card.style.opacity = '0';
-        card.style.transform = 'translateY(10px)';
+        card.style.transform = 'translateY(-10px)';
         setTimeout(() => {
           if (card.parentNode) {
             card.parentNode.removeChild(card);

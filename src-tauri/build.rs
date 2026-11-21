@@ -9,10 +9,16 @@ fn main() {
             "set_hide_message_content",
             "set_badge_color",
             "set_run_at_startup",
+            "set_minimize_to_tray",
+            "set_start_minimized_to_tray",
             "check_for_updates",
             "download_update",
             "install_and_restart",
             "get_update_status",
+            "cancel_download",
+            "get_active_downloads",
+            "open_downloaded_file",
+            "show_in_folder",
         ]),
     ))
     .expect("failed to run tauri-build");

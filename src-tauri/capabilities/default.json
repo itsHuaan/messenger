@@ -23,9 +23,15 @@
     "allow-set-hide-message-content",
     "allow-set-badge-color",
     "allow-set-run-at-startup",
+    "allow-set-minimize-to-tray",
+    "allow-set-start-minimized-to-tray",
     "allow-check-for-updates",
     "allow-download-update",
     "allow-install-and-restart",
-    "allow-get-update-status"
+    "allow-get-update-status",
+    "allow-cancel-download",
+    "allow-get-active-downloads",
+    "allow-open-downloaded-file",
+    "allow-show-in-folder"
   ]
 }

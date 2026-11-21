@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-start-minimized-to-tray"
+description = "Enables the set_start_minimized_to_tray command without any pre-configured scope."
+commands.allow = ["set_start_minimized_to_tray"]
+
+[[permission]]
+identifier = "deny-set-start-minimized-to-tray"
+description = "Denies the set_start_minimized_to_tray command without any pre-configured scope."
+commands.deny = ["set_start_minimized_to_tray"]
