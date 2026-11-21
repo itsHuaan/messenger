@@ -6,14 +6,17 @@ mod download;
 mod notification;
 mod settings;
 mod startup;
+mod tray;
 mod updater;
 
 use settings::AppSettings;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 pub struct AppState {
     pub settings: Mutex<AppSettings>,
+    pub is_exiting: AtomicBool,
 }
 
 fn open_in_browser(url: &str) {
@@ -165,6 +168,26 @@ fn set_run_at_startup(app: tauri::AppHandle, enabled: bool) -> Result<AppSetting
     Ok(settings.clone())
 }
 
+#[tauri::command]
+fn set_minimize_to_tray(app: tauri::AppHandle, enabled: bool) -> Result<AppSettings, String> {
+    let state = app.state::<AppState>();
+    let mut settings = state.settings.lock().map_err(|e| e.to_string())?;
+    settings.minimize_to_tray = enabled;
+    settings::save_settings(&app, &settings)?;
+    println!("[Messenger Desktop] Minimize to tray set to: {enabled}");
+    Ok(settings.clone())
+}
+
+#[tauri::command]
+fn set_start_minimized_to_tray(app: tauri::AppHandle, enabled: bool) -> Result<AppSettings, String> {
+    let state = app.state::<AppState>();
+    let mut settings = state.settings.lock().map_err(|e| e.to_string())?;
+    settings.start_minimized_to_tray = enabled;
+    settings::save_settings(&app, &settings)?;
+    println!("[Messenger Desktop] Start minimized to tray set to: {enabled}");
+    Ok(settings.clone())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -177,6 +200,30 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let app = window.app_handle();
+                let state = app.state::<AppState>();
+                if state.is_exiting.load(Ordering::SeqCst) {
+                    return;
+                }
+
+                let minimize_to_tray = state
+                    .settings
+                    .lock()
+                    .map(|s| s.minimize_to_tray)
+                    .unwrap_or(true);
+
+                if minimize_to_tray {
+                    api.prevent_close();
+                    let _ = window.hide();
+                    println!("[Messenger Desktop] Window hidden to system tray on close request.");
+                } else {
+                    println!("[Messenger Desktop] Terminating application on window close (Minimize to Tray disabled).");
+                    tray::exit_application(app);
+                }
+            }
+        })
         .setup(|app| {
             // Register Windows AppUserModelID identity and shortcut
             notification::register_app_identity(app.handle());
@@ -188,13 +235,25 @@ fn main() {
                 }
             }
             app.manage(AppState {
-                settings: Mutex::new(initial_settings),
+                settings: Mutex::new(initial_settings.clone()),
+                is_exiting: AtomicBool::new(false),
             });
             app.manage(Arc::new(updater::UpdateManager::new()));
             app.manage(download::DownloadManager::new());
 
+            // Initialize Windows System Tray
+            if let Err(e) = tray::setup_tray(app.handle()) {
+                eprintln!("[Messenger Desktop] Failed to setup system tray: {e}");
+            }
+
             let app_handle_nav = app.handle().clone();
             let app_handle_win = app.handle().clone();
+
+            let should_start_minimized =
+                initial_settings.minimize_to_tray && initial_settings.start_minimized_to_tray;
+            if should_start_minimized {
+                println!("[Messenger Desktop] Starting application hidden in system tray.");
+            }
 
             let webview_window = tauri::WebviewWindowBuilder::new(
                 app,
@@ -204,6 +263,7 @@ fn main() {
                 ),
             )
             .title("Messenger")
+            .visible(!should_start_minimized)
             .position(338.0, 118.0)
             .inner_size(1244.0, 797.0)
             .min_inner_size(605.0, 800.0)
@@ -265,6 +325,8 @@ fn main() {
             set_hide_message_content,
             set_badge_color,
             set_run_at_startup,
+            set_minimize_to_tray,
+            set_start_minimized_to_tray,
             updater::check_for_updates,
             updater::download_update,
             updater::install_and_restart,

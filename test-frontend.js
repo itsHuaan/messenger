@@ -356,7 +356,9 @@ const defaultAppSettings = {
   badge_enabled: true,
   hide_message_content: false,
   badge_color: '#F52D2D',
-  run_at_startup: false
+  run_at_startup: false,
+  minimize_to_tray: true,
+  start_minimized_to_tray: false
 };
 
 // 1. Verify default is off
@@ -500,5 +502,40 @@ assert.strictEqual(getFileIcon('archive.zip'), '📦');
 assert.strictEqual(getFileIcon('unknown.bin'), '📁');
 
 console.log('✓ Passed: Download URLs correctly identified, byte formatting & icons verified');
+
+// Test 12: System Tray & Window Behavior Settings logic
+console.log('Test 12: System Tray & Window Behavior Settings');
+
+assert.strictEqual(defaultAppSettings.minimize_to_tray, true, 'Minimize to Tray must be enabled by default');
+assert.strictEqual(defaultAppSettings.start_minimized_to_tray, false, 'Start Minimized to Tray must be disabled by default');
+
+function shouldStartMinimized(settings) {
+  return !!(settings.minimize_to_tray && settings.start_minimized_to_tray);
+}
+
+// Start Minimized only takes effect if Minimize to Tray is enabled
+assert.strictEqual(shouldStartMinimized({ minimize_to_tray: true, start_minimized_to_tray: false }), false);
+assert.strictEqual(shouldStartMinimized({ minimize_to_tray: true, start_minimized_to_tray: true }), true);
+assert.strictEqual(shouldStartMinimized({ minimize_to_tray: false, start_minimized_to_tray: true }), false, 'Start Minimized must be ignored when Minimize to Tray is disabled');
+
+function determineCloseAction(minimizeToTray) {
+  return minimizeToTray ? 'hide' : 'exit';
+}
+
+assert.strictEqual(determineCloseAction(true), 'hide', 'When Minimize to Tray is enabled, close action must hide to tray');
+assert.strictEqual(determineCloseAction(false), 'exit', 'When Minimize to Tray is disabled, close action must exit application');
+
+function determineTrayClickAction(isVisible, isMinimized) {
+  if (isVisible && !isMinimized) {
+    return 'hide';
+  }
+  return 'restore_and_focus';
+}
+
+assert.strictEqual(determineTrayClickAction(true, false), 'hide', 'Clicking tray when visible must toggle hide');
+assert.strictEqual(determineTrayClickAction(false, false), 'restore_and_focus', 'Clicking tray when hidden must restore and focus');
+assert.strictEqual(determineTrayClickAction(true, true), 'restore_and_focus', 'Clicking tray when minimized must restore and focus');
+
+console.log('✓ Passed: System tray settings defaults, dependency hierarchy, and toggle behaviors verified');
 
 console.log('\nAll frontend logic tests passed successfully!');

@@ -7,6 +7,10 @@ fn default_badge_color() -> String {
     "#F52D2D".to_string()
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
     pub notifications_enabled: bool,
@@ -20,6 +24,10 @@ pub struct AppSettings {
     pub last_update_check: Option<String>,
     #[serde(default)]
     pub run_at_startup: bool,
+    #[serde(default = "default_true")]
+    pub minimize_to_tray: bool,
+    #[serde(default)]
+    pub start_minimized_to_tray: bool,
 }
 
 impl Default for AppSettings {
@@ -31,6 +39,8 @@ impl Default for AppSettings {
             badge_color: default_badge_color(),
             last_update_check: None,
             run_at_startup: false,
+            minimize_to_tray: true,
+            start_minimized_to_tray: false,
         }
     }
 }
@@ -82,6 +92,8 @@ mod tests {
         assert_eq!(settings.badge_color, "#F52D2D");
         assert!(settings.last_update_check.is_none());
         assert!(!settings.run_at_startup, "Default run_at_startup must be false (off)");
+        assert!(settings.minimize_to_tray, "Default minimize_to_tray must be true (on)");
+        assert!(!settings.start_minimized_to_tray, "Default start_minimized_to_tray must be false (off)");
     }
 
     #[test]
@@ -93,6 +105,8 @@ mod tests {
             badge_color: "#00AAFF".to_string(),
             last_update_check: Some("2026-11-14 13:00:00 UTC".to_string()),
             run_at_startup: true,
+            minimize_to_tray: false,
+            start_minimized_to_tray: true,
         };
         let serialized = serde_json::to_string(&original).expect("Serialization failed");
         let deserialized: AppSettings =
@@ -110,6 +124,8 @@ mod tests {
         assert_eq!(original.badge_color, deserialized.badge_color);
         assert_eq!(original.last_update_check, deserialized.last_update_check);
         assert_eq!(original.run_at_startup, deserialized.run_at_startup);
+        assert_eq!(original.minimize_to_tray, deserialized.minimize_to_tray);
+        assert_eq!(original.start_minimized_to_tray, deserialized.start_minimized_to_tray);
     }
 
     #[test]
@@ -122,5 +138,7 @@ mod tests {
         assert!(!deserialized.hide_message_content);
         assert_eq!(deserialized.badge_color, "#F52D2D");
         assert!(!deserialized.run_at_startup, "Missing run_at_startup must default to false");
+        assert!(deserialized.minimize_to_tray, "Missing minimize_to_tray must default to true");
+        assert!(!deserialized.start_minimized_to_tray, "Missing start_minimized_to_tray must default to false");
     }
 }

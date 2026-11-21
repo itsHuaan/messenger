@@ -240,7 +240,9 @@
     badge_enabled: true,
     hide_message_content: false,
     badge_color: '#F52D2D',
-    run_at_startup: false
+    run_at_startup: false,
+    minimize_to_tray: true,
+    start_minimized_to_tray: false
   };
 
   // ==========================================
@@ -1109,6 +1111,26 @@
         </div>
         <div class="md-row">
           <div>
+            <div class="md-label">Minimize to Tray</div>
+            <div class="md-sublabel">Closing the window hides it to the system tray instead of exiting</div>
+          </div>
+          <label class="md-switch">
+            <input type="checkbox" id="md-toggle-minimize-tray" checked>
+            <span class="md-slider"></span>
+          </label>
+        </div>
+        <div class="md-row" id="md-row-start-minimized">
+          <div>
+            <div class="md-label">Start Minimized to Tray</div>
+            <div class="md-sublabel">Launch Messenger hidden in system tray (requires Minimize to Tray)</div>
+          </div>
+          <label class="md-switch">
+            <input type="checkbox" id="md-toggle-start-minimized">
+            <span class="md-slider"></span>
+          </label>
+        </div>
+        <div class="md-row">
+          <div>
             <div class="md-label">Unread badge color</div>
             <div class="md-sublabel">Color of the taskbar notification dot</div>
           </div>
@@ -1168,6 +1190,21 @@
       document.getElementById('md-toggle-hide-content').checked = !!appSettings.hide_message_content;
       document.getElementById('md-toggle-startup').checked = !!appSettings.run_at_startup;
       document.getElementById('md-badge-color').value = appSettings.badge_color || '#F52D2D';
+
+      const minToTrayChecked = appSettings.minimize_to_tray !== false;
+      const toggleMinTray = document.getElementById('md-toggle-minimize-tray');
+      if (toggleMinTray) {
+        toggleMinTray.checked = minToTrayChecked;
+      }
+      const toggleStartMin = document.getElementById('md-toggle-start-minimized');
+      const rowStartMin = document.getElementById('md-row-start-minimized');
+      if (toggleStartMin) {
+        toggleStartMin.checked = !!appSettings.start_minimized_to_tray;
+        toggleStartMin.disabled = !minToTrayChecked;
+      }
+      if (rowStartMin) {
+        rowStartMin.style.opacity = minToTrayChecked ? '1' : '0.5';
+      }
 
       // Query version and last check time
       invoke('get_update_status')
@@ -1231,6 +1268,44 @@
         appSettings.run_at_startup = !enabled;
       });
     });
+
+    // Toggle: Minimize to Tray
+    const toggleMinTray = document.getElementById('md-toggle-minimize-tray');
+    if (toggleMinTray) {
+      toggleMinTray.addEventListener('change', e => {
+        const enabled = e.target.checked;
+        appSettings.minimize_to_tray = enabled;
+
+        const toggleStartMin = document.getElementById('md-toggle-start-minimized');
+        const rowStartMin = document.getElementById('md-row-start-minimized');
+        if (toggleStartMin) {
+          toggleStartMin.disabled = !enabled;
+        }
+        if (rowStartMin) {
+          rowStartMin.style.opacity = enabled ? '1' : '0.5';
+        }
+
+        invoke('set_minimize_to_tray', { enabled }).catch(err => {
+          console.error('[Messenger Desktop] Error setting minimize to tray:', err);
+          e.target.checked = !enabled;
+          appSettings.minimize_to_tray = !enabled;
+        });
+      });
+    }
+
+    // Toggle: Start Minimized to Tray
+    const toggleStartMin = document.getElementById('md-toggle-start-minimized');
+    if (toggleStartMin) {
+      toggleStartMin.addEventListener('change', e => {
+        const enabled = e.target.checked;
+        appSettings.start_minimized_to_tray = enabled;
+        invoke('set_start_minimized_to_tray', { enabled }).catch(err => {
+          console.error('[Messenger Desktop] Error setting start minimized to tray:', err);
+          e.target.checked = !enabled;
+          appSettings.start_minimized_to_tray = !enabled;
+        });
+      });
+    }
 
     // Badge color picker
     document.getElementById('md-badge-color').addEventListener('input', e => {
@@ -1416,6 +1491,19 @@
         alert('Failed to launch installer: ' + err);
       });
     });
+
+    // Expose programmatic trigger for manual updater (used by system tray context menu)
+    window.__MESSENGER_DESKTOP_CHECK_UPDATES__ = () => {
+      openModal();
+      performUpdateCheck();
+    };
+
+    if (window.__TAURI__ && window.__TAURI__.event) {
+      window.__TAURI__.event.listen('trigger-check-updates', () => {
+        openModal();
+        performUpdateCheck();
+      }).catch(console.error);
+    }
   }
 
   // ==========================================
