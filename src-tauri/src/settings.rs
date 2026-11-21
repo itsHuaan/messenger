@@ -1,7 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
+
+pub struct AppState {
+    pub settings: Mutex<AppSettings>,
+    pub is_exiting: AtomicBool,
+}
 
 fn default_badge_color() -> String {
     "#F52D2D".to_string()
@@ -28,6 +35,10 @@ pub struct AppSettings {
     pub minimize_to_tray: bool,
     #[serde(default)]
     pub start_minimized_to_tray: bool,
+    #[serde(default)]
+    pub download_dir: Option<String>,
+    #[serde(default)]
+    pub ask_download_location: bool,
 }
 
 impl Default for AppSettings {
@@ -41,8 +52,31 @@ impl Default for AppSettings {
             run_at_startup: false,
             minimize_to_tray: true,
             start_minimized_to_tray: false,
+            download_dir: None,
+            ask_download_location: false,
         }
     }
+}
+
+pub fn get_default_download_dir(app: &AppHandle) -> PathBuf {
+    app.path()
+        .download_dir()
+        .ok()
+        .or_else(|| {
+            std::env::var_os("USERPROFILE")
+                .map(|p| PathBuf::from(p).join("Downloads"))
+        })
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+pub fn get_effective_download_dir(app: &AppHandle, settings: &AppSettings) -> PathBuf {
+    if let Some(dir) = &settings.download_dir {
+        let p = PathBuf::from(dir);
+        if p.exists() && p.is_dir() {
+            return p;
+        }
+    }
+    get_default_download_dir(app)
 }
 
 pub fn get_settings_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -94,6 +128,8 @@ mod tests {
         assert!(!settings.run_at_startup, "Default run_at_startup must be false (off)");
         assert!(settings.minimize_to_tray, "Default minimize_to_tray must be true (on)");
         assert!(!settings.start_minimized_to_tray, "Default start_minimized_to_tray must be false (off)");
+        assert!(settings.download_dir.is_none(), "Default download_dir must be None");
+        assert!(!settings.ask_download_location, "Default ask_download_location must be false");
     }
 
     #[test]
@@ -107,6 +143,8 @@ mod tests {
             run_at_startup: true,
             minimize_to_tray: false,
             start_minimized_to_tray: true,
+            download_dir: Some("D:\\MessengerDownloads".to_string()),
+            ask_download_location: true,
         };
         let serialized = serde_json::to_string(&original).expect("Serialization failed");
         let deserialized: AppSettings =
@@ -126,6 +164,8 @@ mod tests {
         assert_eq!(original.run_at_startup, deserialized.run_at_startup);
         assert_eq!(original.minimize_to_tray, deserialized.minimize_to_tray);
         assert_eq!(original.start_minimized_to_tray, deserialized.start_minimized_to_tray);
+        assert_eq!(original.download_dir, deserialized.download_dir);
+        assert_eq!(original.ask_download_location, deserialized.ask_download_location);
     }
 
     #[test]
@@ -140,5 +180,7 @@ mod tests {
         assert!(!deserialized.run_at_startup, "Missing run_at_startup must default to false");
         assert!(deserialized.minimize_to_tray, "Missing minimize_to_tray must default to true");
         assert!(!deserialized.start_minimized_to_tray, "Missing start_minimized_to_tray must default to false");
+        assert!(deserialized.download_dir.is_none());
+        assert!(!deserialized.ask_download_location);
     }
 }

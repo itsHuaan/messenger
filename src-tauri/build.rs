@@ -19,6 +19,11 @@ fn main() {
             "get_active_downloads",
             "open_downloaded_file",
             "show_in_folder",
+            "get_default_download_dir",
+            "choose_download_dir",
+            "set_download_dir",
+            "set_ask_download_location",
+            "open_download_dir",
         ]),
     ))
     .expect("failed to run tauri-build");

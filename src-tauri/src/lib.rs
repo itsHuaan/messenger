@@ -5,6 +5,8 @@ pub mod download;
 pub mod notification;
 pub mod settings;
 
+pub use settings::AppState;
+
 
 #[tauri::command]
 fn greet(name: &str) -> String {

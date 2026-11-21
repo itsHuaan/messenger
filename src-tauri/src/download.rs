@@ -318,6 +318,37 @@ fn format_interrupt_reason(reason: COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON) -> St
     }
 }
 
+pub fn get_unique_path(dir: &Path, filename: &str) -> PathBuf {
+    let dest = dir.join(filename);
+    if !dest.exists() {
+        return dest;
+    }
+
+    let p = Path::new(filename);
+    let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or(filename);
+    let ext = p.extension().and_then(|s| s.to_str());
+
+    for i in 1..10000 {
+        let new_name = match ext {
+            Some(extension) if !extension.is_empty() => format!("{stem} ({i}).{extension}"),
+            _ => format!("{stem} ({i})"),
+        };
+        let candidate = dir.join(&new_name);
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+
+    dir.join(format!(
+        "{stem}_{}.{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+        ext.unwrap_or("")
+    ))
+}
+
 pub fn setup_webview_downloads(window: &WebviewWindow, app_handle: AppHandle) -> Result<(), String> {
     window
         .with_webview(move |platform_webview| {
@@ -396,25 +427,47 @@ fn handle_download_starting(
             "[Messenger Desktop] Download starting: suggested='{sanitized_filename}', uri={uri}"
         );
 
-        // 4. Open native Windows Save File dialog
-        let mut dialog = rfd::FileDialog::new()
-            .set_title("Save File")
-            .set_file_name(&sanitized_filename);
-
-        if let Some(ext) = Path::new(&sanitized_filename).extension().and_then(|s| s.to_str()) {
-            if !ext.is_empty() {
-                dialog = dialog.add_filter(ext, &[ext]);
+        // 4. Resolve download directory and settings
+        let app_state = app_handle.state::<crate::AppState>();
+        let (download_dir, ask_save_location) = {
+            if let Ok(settings) = app_state.settings.lock() {
+                (
+                    crate::settings::get_effective_download_dir(app_handle, &settings),
+                    settings.ask_download_location,
+                )
+            } else {
+                (
+                    crate::settings::get_default_download_dir(app_handle),
+                    false,
+                )
             }
-        }
-        dialog = dialog.add_filter("All Files (*.*)", &["*"]);
+        };
 
-        if let Some(parent) = default_result_path.parent() {
-            if parent.exists() {
-                dialog = dialog.set_directory(parent);
+        let user_selection: Option<PathBuf> = if ask_save_location {
+            // Open native Windows Save File dialog starting in configured download directory
+            let mut dialog = rfd::FileDialog::new()
+                .set_title("Save File")
+                .set_file_name(&sanitized_filename);
+
+            if let Some(ext) = Path::new(&sanitized_filename).extension().and_then(|s| s.to_str()) {
+                if !ext.is_empty() {
+                    dialog = dialog.add_filter(ext, &[ext]);
+                }
             }
-        }
+            dialog = dialog.add_filter("All Files (*.*)", &["*"]);
 
-        let user_selection = dialog.save_file();
+            if download_dir.exists() {
+                dialog = dialog.set_directory(&download_dir);
+            }
+
+            dialog.save_file()
+        } else {
+            // Auto-save to download_dir without prompting dialog
+            if !download_dir.exists() {
+                let _ = std::fs::create_dir_all(&download_dir);
+            }
+            Some(get_unique_path(&download_dir, &sanitized_filename))
+        };
 
         match user_selection {
             Some(dest_path) => {
@@ -429,7 +482,7 @@ fn handle_download_starting(
                 }
 
                 println!(
-                    "[Messenger Desktop] User selected destination path: {:?}",
+                    "[Messenger Desktop] Download destination path: {:?}",
                     dest_path
                 );
 
@@ -749,6 +802,26 @@ mod tests {
         let id2 = manager.next_download_id();
         assert_eq!(id1, 1);
         assert_eq!(id2, 2);
+    }
+
+    #[test]
+    fn test_get_unique_path() {
+        let temp_dir = std::env::temp_dir().join("messenger_test_unique_path");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let path1 = get_unique_path(&temp_dir, "test.txt");
+        assert_eq!(path1, temp_dir.join("test.txt"));
+        std::fs::write(&path1, b"hello").unwrap();
+
+        let path2 = get_unique_path(&temp_dir, "test.txt");
+        assert_eq!(path2, temp_dir.join("test (1).txt"));
+        std::fs::write(&path2, b"hello 2").unwrap();
+
+        let path3 = get_unique_path(&temp_dir, "test.txt");
+        assert_eq!(path3, temp_dir.join("test (2).txt"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
 

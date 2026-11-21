@@ -32,6 +32,11 @@
     "allow-cancel-download",
     "allow-get-active-downloads",
     "allow-open-downloaded-file",
-    "allow-show-in-folder"
+    "allow-show-in-folder",
+    "allow-get-default-download-dir",
+    "allow-choose-download-dir",
+    "allow-set-download-dir",
+    "allow-set-ask-download-location",
+    "allow-open-download-dir"
   ]
 }

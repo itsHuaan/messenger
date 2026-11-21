@@ -9,15 +9,11 @@ mod startup;
 mod tray;
 mod updater;
 
-use settings::AppSettings;
+use settings::{AppSettings, AppState};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
-
-pub struct AppState {
-    pub settings: Mutex<AppSettings>,
-    pub is_exiting: AtomicBool,
-}
 
 fn open_in_browser(url: &str) {
     if let Err(e) = tauri_plugin_opener::open_url(url, None::<&str>) {
@@ -188,6 +184,87 @@ fn set_start_minimized_to_tray(app: tauri::AppHandle, enabled: bool) -> Result<A
     Ok(settings.clone())
 }
 
+#[tauri::command]
+fn get_default_download_dir(app: tauri::AppHandle) -> Result<String, String> {
+    Ok(settings::get_default_download_dir(&app).to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn choose_download_dir(app: tauri::AppHandle) -> Result<AppSettings, String> {
+    let state = app.state::<AppState>();
+    let current_dir = {
+        let settings = state.settings.lock().map_err(|e| e.to_string())?;
+        settings::get_effective_download_dir(&app, &settings)
+    };
+
+    let mut dialog = rfd::FileDialog::new().set_title("Choose Download Location");
+    if current_dir.exists() {
+        dialog = dialog.set_directory(&current_dir);
+    }
+
+    if let Some(folder) = dialog.pick_folder() {
+        if !folder.is_absolute() || !folder.exists() {
+            return Err("Selected folder does not exist or is invalid.".to_string());
+        }
+
+        let mut settings = state.settings.lock().map_err(|e| e.to_string())?;
+        let dir_str = folder.to_string_lossy().to_string();
+        settings.download_dir = Some(dir_str.clone());
+        settings::save_settings(&app, &settings)?;
+        println!("[Messenger Desktop] Download location set to: {dir_str}");
+        Ok(settings.clone())
+    } else {
+        let settings = state.settings.lock().map_err(|e| e.to_string())?;
+        Ok(settings.clone())
+    }
+}
+
+#[tauri::command]
+fn set_download_dir(app: tauri::AppHandle, path: Option<String>) -> Result<AppSettings, String> {
+    let state = app.state::<AppState>();
+    let mut settings = state.settings.lock().map_err(|e| e.to_string())?;
+
+    if let Some(ref p) = path {
+        let pb = PathBuf::from(p);
+        if !pb.is_absolute() || !pb.exists() || !pb.is_dir() {
+            return Err("Provided path is not a valid directory.".to_string());
+        }
+        settings.download_dir = Some(p.clone());
+    } else {
+        settings.download_dir = None;
+    }
+
+    settings::save_settings(&app, &settings)?;
+    println!("[Messenger Desktop] Download location updated to: {:?}", settings.download_dir);
+    Ok(settings.clone())
+}
+
+#[tauri::command]
+fn set_ask_download_location(app: tauri::AppHandle, enabled: bool) -> Result<AppSettings, String> {
+    let state = app.state::<AppState>();
+    let mut settings = state.settings.lock().map_err(|e| e.to_string())?;
+    settings.ask_download_location = enabled;
+    settings::save_settings(&app, &settings)?;
+    println!("[Messenger Desktop] Ask download location set to: {enabled}");
+    Ok(settings.clone())
+}
+
+#[tauri::command]
+fn open_download_dir(app: tauri::AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let dir = {
+        let settings = state.settings.lock().map_err(|e| e.to_string())?;
+        settings::get_effective_download_dir(&app, &settings)
+    };
+
+    if !dir.exists() {
+        return Err("Download directory does not exist.".to_string());
+    }
+
+    tauri_plugin_opener::open_path(&dir, None::<&str>)
+        .map_err(|e| format!("Failed to open folder: {e}"))
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -335,6 +412,11 @@ fn main() {
             download::get_active_downloads,
             download::open_downloaded_file,
             download::show_in_folder,
+            get_default_download_dir,
+            choose_download_dir,
+            set_download_dir,
+            set_ask_download_location,
+            open_download_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

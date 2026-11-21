@@ -242,7 +242,9 @@
     badge_color: '#F52D2D',
     run_at_startup: false,
     minimize_to_tray: true,
-    start_minimized_to_tray: false
+    start_minimized_to_tray: false,
+    download_dir: null,
+    ask_download_location: false
   };
 
   // ==========================================
@@ -1143,6 +1145,40 @@
 
         <div class="md-section-divider"></div>
 
+        <!-- Downloads Section -->
+        <div class="md-download-section">
+          <div style="margin-bottom: 8px;">
+            <div class="md-label" style="font-size: 15px; font-weight: 600;">Downloads</div>
+          </div>
+          <div class="md-row" style="flex-direction: column; align-items: stretch; gap: 8px; padding-bottom: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+              <div style="min-width: 0; flex: 1;">
+                <div class="md-label">Download location</div>
+                <div class="md-sublabel" id="md-download-path-label" style="word-break: break-all; margin-top: 6px; font-family: Consolas, monospace; font-size: 11px; background: rgba(0,0,0,0.3); padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); color: #ced0d4;">
+                  Loading...
+                </div>
+              </div>
+              <div style="display: flex; gap: 6px; flex-shrink: 0; margin-top: 2px;">
+                <button class="md-action-btn md-btn-secondary" id="md-change-download-dir-btn" style="padding: 6px 12px; font-size: 12px;" title="Choose a new folder">Change</button>
+                <button class="md-action-btn md-btn-secondary" id="md-open-download-dir-btn" style="padding: 6px 10px; font-size: 12px;" title="Open folder in Windows Explorer">Open</button>
+                <button class="md-action-btn md-btn-secondary" id="md-reset-download-dir-btn" style="display: none; padding: 6px 10px; font-size: 12px;" title="Reset to default Downloads folder">Reset</button>
+              </div>
+            </div>
+          </div>
+          <div class="md-row">
+            <div>
+              <div class="md-label">Ask where to save each file before downloading</div>
+              <div class="md-sublabel">Show save file dialog for each download instead of saving automatically</div>
+            </div>
+            <label class="md-switch">
+              <input type="checkbox" id="md-toggle-ask-download">
+              <span class="md-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="md-section-divider"></div>
+
         <div class="md-update-section">
           <div class="md-update-header">
             <div>
@@ -1184,12 +1220,44 @@
     document.body.appendChild(container);
 
     // Event listeners
+    let defaultDownloadDir = '';
+
+    const updateDownloadDirUI = () => {
+      const pathLabel = document.getElementById('md-download-path-label');
+      const resetBtn = document.getElementById('md-reset-download-dir-btn');
+      const askToggle = document.getElementById('md-toggle-ask-download');
+
+      if (askToggle) {
+        askToggle.checked = !!appSettings.ask_download_location;
+      }
+
+      if (appSettings.download_dir) {
+        if (pathLabel) pathLabel.textContent = appSettings.download_dir;
+        if (resetBtn) resetBtn.style.display = 'inline-block';
+      } else {
+        if (pathLabel) {
+          pathLabel.textContent = defaultDownloadDir ? `${defaultDownloadDir} (Default)` : 'Default Downloads Folder';
+        }
+        if (resetBtn) resetBtn.style.display = 'none';
+      }
+    };
+
     const openModal = () => {
       document.getElementById('md-toggle-notifications').checked = !!appSettings.notifications_enabled;
       document.getElementById('md-toggle-badge').checked = !!appSettings.badge_enabled;
       document.getElementById('md-toggle-hide-content').checked = !!appSettings.hide_message_content;
       document.getElementById('md-toggle-startup').checked = !!appSettings.run_at_startup;
       document.getElementById('md-badge-color').value = appSettings.badge_color || '#F52D2D';
+
+      updateDownloadDirUI();
+      invoke('get_default_download_dir')
+        .then(dir => {
+          defaultDownloadDir = dir || '';
+          updateDownloadDirUI();
+        })
+        .catch(() => {
+          updateDownloadDirUI();
+        });
 
       const minToTrayChecked = appSettings.minimize_to_tray !== false;
       const toggleMinTray = document.getElementById('md-toggle-minimize-tray');
@@ -1340,6 +1408,63 @@
         hasUnread: nextCount > 0
       }).catch(err => alert('Badge error: ' + err));
     });
+
+    // ==========================================
+    // Download Location Controls
+    // ==========================================
+    const changeDirBtn = document.getElementById('md-change-download-dir-btn');
+    if (changeDirBtn) {
+      changeDirBtn.addEventListener('click', () => {
+        invoke('choose_download_dir')
+          .then(newSettings => {
+            if (newSettings) {
+              appSettings = newSettings;
+              updateDownloadDirUI();
+            }
+          })
+          .catch(err => {
+            console.error('[Messenger Desktop] Error choosing download folder:', err);
+          });
+      });
+    }
+
+    const openDirBtn = document.getElementById('md-open-download-dir-btn');
+    if (openDirBtn) {
+      openDirBtn.addEventListener('click', () => {
+        invoke('open_download_dir').catch(err => {
+          console.error('[Messenger Desktop] Error opening download folder:', err);
+        });
+      });
+    }
+
+    const resetDirBtn = document.getElementById('md-reset-download-dir-btn');
+    if (resetDirBtn) {
+      resetDirBtn.addEventListener('click', () => {
+        invoke('set_download_dir', { path: null })
+          .then(newSettings => {
+            if (newSettings) {
+              appSettings = newSettings;
+              updateDownloadDirUI();
+            }
+          })
+          .catch(err => {
+            console.error('[Messenger Desktop] Error resetting download folder:', err);
+          });
+      });
+    }
+
+    const askDownloadToggle = document.getElementById('md-toggle-ask-download');
+    if (askDownloadToggle) {
+      askDownloadToggle.addEventListener('change', e => {
+        const enabled = e.target.checked;
+        appSettings.ask_download_location = enabled;
+        invoke('set_ask_download_location', { enabled }).catch(err => {
+          console.error('[Messenger Desktop] Error setting ask download location:', err);
+          e.target.checked = !enabled;
+          appSettings.ask_download_location = !enabled;
+        });
+      });
+    }
 
     // ==========================================
     // Update Manager Controls
