@@ -5,6 +5,7 @@ mod badge;
 mod download;
 mod notification;
 mod settings;
+mod shortcut;
 mod startup;
 mod tray;
 mod updater;

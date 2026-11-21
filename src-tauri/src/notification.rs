@@ -1,4 +1,3 @@
-use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 use windows::Data::Xml::Dom::XmlDocument;
@@ -107,40 +106,10 @@ pub fn register_app_identity(app: &AppHandle) {
         }
     }
 
-    // 3. Ensure a Start Menu shortcut exists with matching AppUserModelID
-    create_start_menu_shortcut(app);
-}
-
-/// Creates or updates a Start Menu shortcut to ensure Windows Action Center displays Messenger identity.
-fn create_start_menu_shortcut(app: &AppHandle) {
-    let Ok(current_exe) = tauri::utils::platform::current_exe() else {
-        return;
-    };
-    // Strip Windows extended-length prefix (\\?\) if present
-    let exe_path_str = current_exe.display().to_string();
-    let clean_exe_str = exe_path_str.strip_prefix(r"\\?\").unwrap_or(&exe_path_str);
-    let exe_str = clean_exe_str.to_string();
-
-    let icon_path = get_icon_path(app).unwrap_or_else(|| current_exe.clone());
-    let icon_path_str = icon_path.display().to_string();
-    let clean_icon_str = icon_path_str
-        .strip_prefix(r"\\?\")
-        .unwrap_or(&icon_path_str);
-    let icon_str = clean_icon_str.to_string();
-
-    let ps_command = format!(
-        "$ws = New-Object -ComObject WScript.Shell; \
-         $scPath = Join-Path ([Environment]::GetFolderPath('Programs')) 'Messenger.lnk'; \
-         $sc = $ws.CreateShortcut($scPath); \
-         $sc.TargetPath = '{exe_str}'; \
-         $sc.IconLocation = '{icon_str}'; \
-         $sc.Save();"
-    );
-
-    let _ = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &ps_command])
-        .creation_flags(0x08000000) // CREATE_NO_WINDOW
-        .spawn();
+    // 3. Ensure Windows shortcuts (Start Menu and Desktop if exists) are maintained and valid
+    if let Err(e) = crate::shortcut::maintain_shortcuts() {
+        eprintln!("[Shortcuts] Error maintaining shortcuts: {e}");
+    }
 }
 
 /// Parses a query string formatted argument like "action=reply&threadId=123"

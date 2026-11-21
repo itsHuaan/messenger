@@ -4,6 +4,8 @@ pub mod badge;
 pub mod download;
 pub mod notification;
 pub mod settings;
+pub mod shortcut;
+pub mod startup;
 
 pub use settings::AppState;
 

@@ -69,7 +69,8 @@
       '[title*="tắt thông báo" i]',
       '[data-testid*="mute" i]',
       'path[d^="M29.676"]',
-      'path[d*="29.676 7.746"]'
+      'path[d*="29.676 7.746"]',
+      '<path d="M2.5 6c0-.322.028-.637.081-.943l8.296 8.296A3.001 3.001 0 0 1 5 12.5H2.432a.98.98 0 0 1-.816-1.525A5.268 5.268 0 0 0 2.5 8.053V6zm4 6.5a1.5 1.5 0 0 0 3 0h-3zm7.06 0h.01a.98.98 0 0 0 .815-1.525 5.269 5.269 0 0 1-.885-2.922V6a5.5 5.5 0 0 0-9.83-3.39L2.28 1.22a.75.75 0 0 0-1.061 1.06l12.5 12.5a.75.75 0 0 0 1.06-1.06l-1.22-1.22z"></path>'
     ].join(','),
 
     // Active conversation message container
@@ -1195,7 +1196,7 @@
         width: 44px;
         height: 44px;
         border-radius: 10px;
-        background: linear-gradient(135deg, #0084ff 0%, #00c6ff 100%);
+        background: linear-gradient(135deg, #0866ff 0%, #0866ff 100%);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1434,15 +1435,13 @@
                 <p class="md-pane-desc">Choose where downloaded files are saved on your computer</p>
               </div>
 
-              <div class="md-row" style="flex-direction: column; align-items: stretch; gap: 8px; padding-bottom: 14px;">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
-                  <div style="min-width: 0; flex: 1;">
-                    <div class="md-label">Download location</div>
-                    <div class="md-sublabel" id="md-download-path-label" style="word-break: break-all; margin-top: 6px; font-family: Consolas, monospace; font-size: 11.5px; background: rgba(0,0,0,0.3); padding: 7px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); color: #ced0d4;">
-                      Loading...
-                    </div>
+              <div class="md-row" style="flex-direction: column; align-items: stretch; gap: 6px; padding-bottom: 14px;">
+                <div class="md-label">Download location</div>
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                  <div class="md-sublabel" id="md-download-path-label" style="min-width: 0; flex: 1; word-break: break-all; font-family: Consolas, monospace; font-size: 11.5px; background: rgba(0,0,0,0.3); padding: 7px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); color: #ced0d4;">
+                    Loading...
                   </div>
-                  <div style="display: flex; gap: 6px; flex-shrink: 0; margin-top: 2px;">
+                  <div style="display: flex; gap: 6px; flex-shrink: 0;">
                     <button class="md-action-btn md-btn-secondary" id="md-change-download-dir-btn" style="padding: 6px 12px; font-size: 12px;" title="Choose a new folder">Change</button>
                     <button class="md-action-btn md-btn-secondary" id="md-open-download-dir-btn" style="padding: 6px 10px; font-size: 12px;" title="Open folder in Windows Explorer">Open</button>
                     <button class="md-action-btn md-btn-secondary" id="md-reset-download-dir-btn" style="display: none; padding: 6px 10px; font-size: 12px;" title="Reset to default Downloads folder">Reset</button>
@@ -1510,8 +1509,8 @@
 
               <div class="md-about-card">
                 <div class="md-about-icon">
-                  <svg viewBox="0 0 24 24">
-                    <path d="M12 2C6.48 2 2 6.03 2 11c0 2.87 1.48 5.43 3.79 7.08L5 22l4.13-1.84C10.05 20.65 11 20.8 12 20.8c5.52 0 10-4.03 10-9s-4.48-9-10-9zm1.09 12.22l-2.61-2.78-5.1 2.78 5.61-5.95 2.67 2.78 5.04-2.78-5.61 5.95z"/>
+                  <svg viewBox="0 0 502 502" width="24" height="24">
+                    <path style="fill-rule: evenodd;" d="M501,243.5c0,139.34-109.17,242.5-250,242.5-25.29,0-49.56-3.34-72.37-9.61-4.43-1.23-9.14-.88-13.35.97l-49.62,21.91c-12.98,5.73-27.63-3.5-28.06-17.68l-1.36-44.48c-.17-5.48-2.63-10.6-6.72-14.25C30.87,379.36,1,316.39,1,243.5,1,104.16,110.17,1,251,1s250,103.16,250,242.5Z M318.88,313.31l87.04-134.52c8.75-13.52-7.46-29.26-20.72-20.11l-90.86,62.67c-3.06,2.11-7.1,2.17-10.22.15l-80.65-52.18c-6.83-4.42-15.94-2.46-20.35,4.36l-87.05,134.52c-8.75,13.52,7.46,29.26,20.72,20.11l90.88-62.68c3.06-2.11,7.1-2.17,10.22-.15l80.63,52.17c6.83,4.42,15.94,2.46,20.36-4.36Z"/>
                   </svg>
                 </div>
                 <div>
@@ -1721,7 +1720,7 @@
       modal.removeEventListener('wheel', handleModalWheel);
       modal.removeEventListener('touchmove', handleModalTouch);
       if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
-        try { lastFocusedElement.focus(); } catch (_) {}
+        try { lastFocusedElement.focus(); } catch (_) { }
       }
     };
 

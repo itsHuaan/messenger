@@ -1,6 +1,6 @@
 [package]
 name = "messenger"
-version = "0.0.9"
+version = "0.0.10"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2024"
@@ -30,6 +30,10 @@ windows = { version = "0.62", features = [
     "UI_Notifications",
     "Foundation_Collections",
     "Win32_UI_Shell",
+    "Win32_System_Com",
+    "Win32_UI_Shell_PropertiesSystem",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
 ] }
 tauri-plugin-dialog = "2"
 webview2-com = "0.39"

@@ -53,9 +53,14 @@ jobs:
             exit 1
           }
           $version = $tag.Substring(1)
+          $commitMsg = (git log -1 --pretty=%B "$tag^{commit}").Trim()
+
           Write-Host "[PASSED] Valid release tag '$tag'. Extracted version: $version"
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "commit_msg<<EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          $commitMsg | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Validate Signing Credentials
         shell: pwsh
@@ -117,7 +122,7 @@ jobs:
           releaseBody: |
             ## Messenger ${{ steps.extract_version.outputs.version }}
             
-            Download the Windows installer below to install or update Messenger.
+            ${{ steps.extract_version.outputs.commit_msg }}
           generateReleaseNotes: true
           releaseDraft: false
           prerelease: false
