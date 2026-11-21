@@ -868,7 +868,7 @@
       .formatToParts(date)
       .find((part) => part.type === 'timeZoneName')?.value || '';
 
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds} ${tz}`.trim();
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`.trim();
   }
 
   // ==========================================
