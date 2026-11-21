@@ -1496,6 +1496,7 @@
                   <button class="md-action-btn md-btn-primary" id="md-restart-update-btn" style="display:none;">Restart to Update</button>
                   <button class="md-action-btn" id="md-retry-update-btn" style="display:none;">Retry</button>
                 </div>
+                <div id="md-scope-info" style="display:none;margin-top:10px;padding:8px 10px;border-radius:6px;background:rgba(255,165,0,0.08);border:1px solid rgba(255,165,0,0.15);font-size:12px;color:#e4a010;line-height:1.4;"></div>
               </div>
             </div>
 
@@ -1914,6 +1915,7 @@
     const restartBtn = document.getElementById('md-restart-update-btn');
     const retryBtn = document.getElementById('md-retry-update-btn');
     const indicator = document.getElementById('md-update-indicator');
+    const scopeInfoBox = document.getElementById('md-scope-info');
 
     let isCheckingUpdates = false;
     let isDownloadingUpdate = false;
@@ -1956,6 +1958,7 @@
       downloadBtn.style.display = 'none';
       restartBtn.style.display = 'none';
       retryBtn.style.display = 'none';
+      scopeInfoBox.style.display = 'none';
 
       invoke('check_for_updates')
         .then(info => {
@@ -1984,7 +1987,41 @@
               notesContainer.style.display = 'none';
             }
 
-            downloadBtn.style.display = 'inline-block';
+            // Check installation scope before enabling download
+            invoke('get_install_scope')
+              .then(scopeInfo => {
+                if (scopeInfo.is_msi) {
+                  scopeInfoBox.style.display = 'block';
+                  scopeInfoBox.style.color = '#fa383e';
+                  scopeInfoBox.style.borderColor = 'rgba(250,56,62,0.2)';
+                  scopeInfoBox.style.background = 'rgba(250,56,62,0.06)';
+                  scopeInfoBox.textContent = 'This installation uses MSI format which is incompatible with the NSIS updater. Please download the new version manually from the GitHub releases page.';
+                  downloadBtn.style.display = 'none';
+                } else if (scopeInfo.scope === 'UNKNOWN') {
+                  scopeInfoBox.style.display = 'block';
+                  scopeInfoBox.style.color = '#fa383e';
+                  scopeInfoBox.style.borderColor = 'rgba(250,56,62,0.2)';
+                  scopeInfoBox.style.background = 'rgba(250,56,62,0.06)';
+                  scopeInfoBox.textContent = 'The installation type could not be determined reliably. Update installation is disabled for safety. Please reinstall the application using the NSIS installer.';
+                  downloadBtn.style.display = 'none';
+                } else if (scopeInfo.scope === 'MACHINE_SCOPE') {
+                  scopeInfoBox.style.display = 'block';
+                  scopeInfoBox.style.color = '#e4a010';
+                  scopeInfoBox.style.borderColor = 'rgba(255,165,0,0.15)';
+                  scopeInfoBox.style.background = 'rgba(255,165,0,0.06)';
+                  scopeInfoBox.textContent = 'This application is installed system-wide. The current-user updater cannot silently update a machine-scope installation. Please download and run the new installer manually.';
+                  downloadBtn.style.display = 'none';
+                } else {
+                  // USER_SCOPE — silent update supported
+                  scopeInfoBox.style.display = 'none';
+                  downloadBtn.style.display = 'inline-block';
+                }
+              })
+              .catch(err => {
+                console.warn('[Messenger Desktop] Could not detect install scope:', err);
+                // Allow download as fallback; install_and_restart will re-check
+                downloadBtn.style.display = 'inline-block';
+              });
           } else {
             indicator.style.display = 'none';
             const navUpdateDot = document.getElementById('md-nav-update-indicator');
@@ -2046,11 +2083,14 @@
     restartBtn.addEventListener('click', () => {
       restartBtn.disabled = true;
       restartBtn.textContent = 'Restarting...';
-      statusText.textContent = 'Launching installer and updating Messenger...';
+      statusText.textContent = 'Installing update and restarting Messenger...';
       invoke('install_and_restart').catch(err => {
         restartBtn.disabled = false;
         restartBtn.textContent = 'Restart to Update';
-        alert('Failed to launch installer: ' + err);
+        const errMsg = typeof err === 'string' ? err : (err.message || 'Failed to launch installer.');
+        statusText.style.color = '#fa383e';
+        statusText.textContent = errMsg;
+        scopeInfoBox.style.display = 'none';
       });
     });
 

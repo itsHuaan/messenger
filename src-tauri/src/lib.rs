@@ -2,6 +2,7 @@ use tauri::Manager;
 
 pub mod badge;
 pub mod download;
+pub mod install_scope;
 pub mod notification;
 pub mod settings;
 pub mod shortcut;

@@ -2,15 +2,22 @@
 ; Ensures robust shortcut preservation, scope handling, and uninstallation.
 
 !macro NSIS_HOOK_PREINSTALL
-  ; If INSTDIR is placeholder or default, check if there is an existing installation in HKLM or previous shortcut
-  ${If} $INSTDIR == "$LOCALAPPDATA\${PRODUCTNAME}"
-  ${OrIf} $INSTDIR == "${PLACEHOLDER_INSTALL_DIR}"
-    ; 1. Check HKLM uninstall key
+  ; When updating, preserve the existing installation scope.
+  ; Only look in HKLM for a machine-scope installation if no
+  ; user-scope (SHCTX) installation metadata was found.
+  ; This prevents a stale HKLM entry from changing the install
+  ; directory during a user-scope update.
+  ReadRegStr $0 SHCTX "${UNINSTKEY}" "InstallLocation"
+  ${If} $0 == ""
+    ReadRegStr $0 SHCTX "${MANUPRODUCTKEY}" ""
+  ${EndIf}
+
+  ${If} $0 == ""
+    ; No user-scope installation found — check for machine-scope
     ReadRegStr $0 HKLM "${UNINSTKEY}" "InstallLocation"
     ${If} $0 != ""
       StrCpy $INSTDIR $0
     ${Else}
-      ; 2. Check manufacturer product key in HKLM
       ReadRegStr $0 HKLM "${MANUPRODUCTKEY}" ""
       ${If} $0 != ""
         StrCpy $INSTDIR $0

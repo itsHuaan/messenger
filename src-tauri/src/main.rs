@@ -3,6 +3,7 @@
 
 mod badge;
 mod download;
+mod install_scope;
 mod notification;
 mod settings;
 mod shortcut;
@@ -42,6 +43,16 @@ fn is_internal_url(url: &tauri::Url) -> bool {
     let is_facebook_redirect = host == "l.facebook.com" && url.path().starts_with("/l.php");
 
     (is_messenger || is_facebook_internal) && !is_facebook_redirect
+}
+
+#[tauri::command]
+fn get_install_scope() -> install_scope::InstallScopeInfo {
+    let info = install_scope::detect_install_scope();
+    println!(
+        "[Messenger Desktop] Install scope: {} (msi={}, detail={})",
+        info.scope, info.is_msi, info.detail
+    );
+    info
 }
 
 #[tauri::command]
@@ -398,6 +409,7 @@ fn main() {
             notify_message,
             update_unread_badge,
             get_settings,
+            get_install_scope,
             set_notifications_enabled,
             set_badge_enabled,
             set_hide_message_content,

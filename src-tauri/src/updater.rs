@@ -283,6 +283,45 @@ pub async fn download_update(app: AppHandle) -> Result<String, String> {
 pub async fn install_and_restart(app: AppHandle) -> Result<(), String> {
     let state = app.state::<Arc<UpdateManager>>();
 
+    // ── Scope gate ──────────────────────────────────────────────────────
+    let scope_info = crate::install_scope::detect_install_scope();
+    println!(
+        "[Updater] Install scope check before update: scope={}, is_msi={}, detail={}",
+        scope_info.scope, scope_info.is_msi, scope_info.detail
+    );
+
+    if scope_info.is_msi {
+        return Err(
+            "This installation uses MSI format which is incompatible with the NSIS updater. \
+             Please download the new version manually from the GitHub releases page."
+                .to_string(),
+        );
+    }
+
+    match scope_info.scope {
+        crate::install_scope::InstallScope::Unknown => {
+            return Err(
+                "The installation type could not be determined reliably. \
+                 Update installation is disabled for safety. \
+                 Please reinstall the application using the NSIS installer."
+                    .to_string(),
+            );
+        }
+        crate::install_scope::InstallScope::MachineScope => {
+            return Err(
+                "This application is installed system-wide (per-machine). \
+                 The current-user NSIS updater cannot silently update a machine-scope \
+                 installation without administrator privileges. \
+                 Please download and run the new installer manually."
+                    .to_string(),
+            );
+        }
+        crate::install_scope::InstallScope::UserScope => {
+            // User-scope: silent update is supported.
+        }
+    }
+    // ────────────────────────────────────────────────────────────────────
+
     let payload = {
         let mut downloaded = state.downloaded_update.lock().map_err(|e| e.to_string())?;
         downloaded.take()
@@ -293,15 +332,15 @@ pub async fn install_and_restart(app: AppHandle) -> Result<(), String> {
         None => return Err("No downloaded update ready to install.".to_string()),
     };
 
-    println!("[Updater] User confirmed install and restart. Launching installer...");
+    println!("[Updater] User confirmed install and restart. Launching silent installer...");
 
-    // Install the update
+    // Install the update (uses quiet mode: /S /UPDATE /R)
     if let Err(e) = payload.update.install(&payload.bytes) {
         eprintln!("[Updater] Installation execution error: {e}");
         return Err(format!("Failed to execute installer: {e}"));
     }
 
-    println!("[Updater] Installer launched. Exiting application to allow update replacement.");
+    println!("[Updater] Silent installer launched. Exiting application to allow update replacement.");
     app.exit(0);
 
     Ok(())
