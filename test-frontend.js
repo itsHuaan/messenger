@@ -566,26 +566,77 @@ assert.strictEqual(determineTrayClickAction(true, true), 'restore_and_focus', 'C
 
 console.log('✓ Passed: System tray settings defaults, dependency hierarchy, and toggle behaviors verified');
 
-// Test 13: Unread badge counts include muted conversations
-console.log('Test 13: Unread badge counts include muted unread conversations');
+// Test 13: Taskbar unread badge calculation excludes muted conversations
+console.log('Test 13: Taskbar unread badge calculation excludes muted conversations');
 
-function computeUnreadBadgeCount(conversations) {
-  let count = 0;
+function computeUnreadBadgeCount(conversations, titleUnreadCount = 0) {
+  let unmutedUnreadCount = 0;
+  let mutedUnreadCount = 0;
   for (const c of conversations) {
-    if (c.isUnread) count++;
+    if (c.isUnread) {
+      if (c.isMuted) {
+        mutedUnreadCount++;
+      } else {
+        unmutedUnreadCount++;
+      }
+    }
   }
-  return count;
+
+  let finalBadgeCount = unmutedUnreadCount;
+  if (mutedUnreadCount === 0 && titleUnreadCount > 0) {
+    finalBadgeCount = Math.max(finalBadgeCount, titleUnreadCount);
+  } else if (mutedUnreadCount > 0 && titleUnreadCount > 0) {
+    const titleAdjusted = Math.max(0, titleUnreadCount - mutedUnreadCount);
+    finalBadgeCount = Math.max(unmutedUnreadCount, titleAdjusted);
+  }
+  return finalBadgeCount;
 }
 
-const convos = [
-  { threadId: '1', isUnread: true, isMuted: true },  // muted but unread -> MUST count!
-  { threadId: '2', isUnread: true, isMuted: false }, // unmuted and unread -> MUST count!
-  { threadId: '3', isUnread: false, isMuted: false },
-  { threadId: '4', isUnread: false, isMuted: true }
-];
+// Case 1: One unread muted conversation: badge count is 0
+assert.strictEqual(
+  computeUnreadBadgeCount([{ threadId: '1', isUnread: true, isMuted: true }], 1),
+  0,
+  'One unread muted conversation must result in badge count 0'
+);
 
-assert.strictEqual(computeUnreadBadgeCount(convos), 2, 'Unread badge must count all unread conversations including muted ones');
-console.log('✓ Passed: Unread badge correctly counts muted unread conversations');
+// Case 2: One unread unmuted conversation: badge count is 1
+assert.strictEqual(
+  computeUnreadBadgeCount([{ threadId: '1', isUnread: true, isMuted: false }], 1),
+  1,
+  'One unread unmuted conversation must result in badge count 1'
+);
+
+// Case 3: Two unread conversations, one muted: badge count is 1
+assert.strictEqual(
+  computeUnreadBadgeCount([
+    { threadId: '1', isUnread: true, isMuted: true },
+    { threadId: '2', isUnread: true, isMuted: false }
+  ], 2),
+  1,
+  'Two unread conversations with one muted must result in badge count 1'
+);
+
+// Case 4: Two unread conversations, both muted: badge count is 0
+assert.strictEqual(
+  computeUnreadBadgeCount([
+    { threadId: '1', isUnread: true, isMuted: true },
+    { threadId: '2', isUnread: true, isMuted: true }
+  ], 2),
+  0,
+  'Two unread conversations both muted must result in badge count 0'
+);
+
+// Case 5: Unmute a conversation with unread messages: badge updates immediately
+const dynamicConvos = [{ threadId: '1', isUnread: true, isMuted: true }];
+assert.strictEqual(computeUnreadBadgeCount(dynamicConvos, 1), 0, 'Initially muted unread conversation has badge count 0');
+dynamicConvos[0].isMuted = false;
+assert.strictEqual(computeUnreadBadgeCount(dynamicConvos, 1), 1, 'Unmuting unread conversation immediately updates badge count to 1');
+
+// Case 6: Mark an unmuted conversation as read: badge decreases correctly
+dynamicConvos[0].isUnread = false;
+assert.strictEqual(computeUnreadBadgeCount(dynamicConvos, 0), 0, 'Marking unmuted conversation as read decreases badge count to 0');
+
+console.log('✓ Passed: Taskbar badge correctly excludes muted conversations and updates immediately on mute/read transitions');
 
 // Test 14: Mute/Unmute state synchronization & notification re-enabling
 console.log('Test 14: Mute cache synchronization and re-enabling notifications upon unmute');
@@ -854,13 +905,13 @@ const arrivalAfterUnmute = simulateConversationArrival({
 assert.strictEqual(arrivalAfterUnmute.notified, true, 'Unmuting must immediately restore notifications on subsequent messages');
 assert.strictEqual(arrivalAfterUnmute.reason, 'new_unread_message');
 
-// 8. Test unread badge counts include muted unread conversations
+// 8. Test unread badge counts exclude muted unread conversations
 const unreadStateTest = [
   { threadId: 'thread_muted_101', isUnread: true, isMuted: true },
   { threadId: 'thread_regular_102', isUnread: true, isMuted: false }
 ];
-assert.strictEqual(computeUnreadBadgeCount(unreadStateTest), 2, 'Unread badge must count all unread messages including muted conversations');
+assert.strictEqual(computeUnreadBadgeCount(unreadStateTest, 2), 1, 'Taskbar badge must exclude muted unread conversations and count only unmuted ones');
 
-console.log('✓ Passed: Exact bell-slash SVG recognized, notification suppression/restoration verified, badge counts preserved');
+console.log('✓ Passed: Exact bell-slash SVG recognized, notification suppression/restoration verified, taskbar badge correctly filters muted conversations');
 
 console.log('\nAll frontend logic tests passed successfully!');

@@ -2199,7 +2199,7 @@ dependencies = [
 
 [[package]]
 name = "messenger"
-version = "0.0.19"
+version = "0.0.20"
 dependencies = [
  "chrono",
  "rfd",

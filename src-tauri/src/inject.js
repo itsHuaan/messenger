@@ -261,6 +261,8 @@
   /**
    * Updates the in-memory and persistent mute cache immediately when state changes.
    */
+  let isUpdatingBadge = false;
+
   function setThreadMuteState(threadId, isMuted) {
     if (!threadId) return;
     const previous = mutedThreadIds.get(threadId);
@@ -268,6 +270,9 @@
       mutedThreadIds.set(threadId, isMuted);
       savePersistedMutedThreads();
       console.log(`[Messenger Desktop] Thread ${threadId} mute state updated: ${isMuted}`);
+      if (!isUpdatingBadge) {
+        updateUnreadBadge();
+      }
     }
   }
 
@@ -783,86 +788,104 @@
   let lastHasUnread = false;
 
   function updateUnreadBadge() {
-    let unreadConversationCount = 0;
-    let hasUnread = false;
+    if (isUpdatingBadge) return;
+    isUpdatingBadge = true;
 
-    // 1. Check document.title for "(N) Messenger" or "(N+) Messenger"
-    const titleMatch = document.title.match(/^\((\d+)\+?\)/);
-    if (titleMatch) {
-      const parsed = parseInt(titleMatch[1], 10);
-      if (!isNaN(parsed) && parsed > 0) {
-        unreadConversationCount = parsed;
-        hasUnread = true;
-      }
-    }
+    try {
+      let unmutedUnreadCount = 0;
+      let mutedUnreadCount = 0;
+      let hasUnmutedUnread = false;
 
-    // 2. Count unread conversation items in the thread list
-    const items = document.querySelectorAll(SELECTORS.conversationItem);
-    let countedRows = 0;
-
-    for (const item of items) {
-      const tid = extractThreadId(item);
-
-      // Refresh mute state in cache
-      const muted = isConversationMuted(item);
-      if (tid) {
-        setThreadMuteState(tid, muted);
-      }
-
-      // Muted conversations STILL contribute to unread count
-      // (notification suppression is separated from unread badge counting)
-
-      let isUnread = false;
-
-      const unreadDot = item.querySelector(SELECTORS.unreadIndicator);
-      if (unreadDot) isUnread = true;
-
-      if (!isUnread) {
-        const itemAria = (item.getAttribute('aria-label') || '').toLowerCase();
-        if (itemAria.includes('unread') || itemAria.includes('chưa đọc')) isUnread = true;
-      }
-
-      if (!isUnread) {
-        const snippetEl = item.querySelector(SELECTORS.snippetElement);
-        if (snippetEl) {
-          const style = window.getComputedStyle(snippetEl);
-          const weight = parseInt(style.fontWeight, 10);
-          if (weight >= 600 || style.fontWeight === 'bold') isUnread = true;
+      // 1. Check document.title for "(N) Messenger" or "(N+) Messenger"
+      let titleUnreadCount = 0;
+      const titleMatch = document.title.match(/^\((\d+)\+?\)/);
+      if (titleMatch) {
+        const parsed = parseInt(titleMatch[1], 10);
+        if (!isNaN(parsed) && parsed > 0) {
+          titleUnreadCount = parsed;
         }
       }
 
-      if (isUnread) countedRows++;
-    }
+      // 2. Scan conversation items in the thread list
+      const items = document.querySelectorAll(SELECTORS.conversationItem);
+      const seenThreads = new Set();
 
-    if (countedRows > 0) {
-      hasUnread = true;
-      if (unreadConversationCount === 0) unreadConversationCount = countedRows;
-    }
+      for (const item of items) {
+        const tid = extractThreadId(item);
+        if (tid && seenThreads.has(tid)) {
+          continue;
+        }
+        if (tid) {
+          seenThreads.add(tid);
+        }
 
-    // 3. Check Chats tab counter if still zero
-    if (!hasUnread) {
-      const chatsTab = document.querySelector(SELECTORS.chatsTab);
-      if (chatsTab) {
-        const aria = (chatsTab.getAttribute('aria-label') || '').toLowerCase();
-        const numMatch = aria.match(/(\d+)\s*(?:unread|chưa đọc)/);
-        if (numMatch) {
-          unreadConversationCount = parseInt(numMatch[1], 10);
-          hasUnread = unreadConversationCount > 0;
+        // Refresh mute state in cache
+        const isMuted = isConversationMuted(item);
+        if (tid) {
+          setThreadMuteState(tid, isMuted);
+        }
+
+        const isUnread = isConversationUnread(item);
+        if (isUnread) {
+          const effectiveMuted = isMuted || (tid ? (mutedThreadIds.get(tid) === true) : false);
+          if (effectiveMuted) {
+            mutedUnreadCount++;
+          } else {
+            unmutedUnreadCount++;
+            hasUnmutedUnread = true;
+          }
         }
       }
-    }
 
-    if (unreadConversationCount !== lastBadgeCount || hasUnread !== lastHasUnread) {
-      lastBadgeCount = unreadConversationCount;
-      lastHasUnread = hasUnread;
+      // 3. Compute final badge count for UNMUTED conversations only
+      let finalBadgeCount = unmutedUnreadCount;
 
-      console.log(`[Messenger Desktop] Updating unread badge: count=${unreadConversationCount}, hasUnread=${hasUnread}`);
-      invoke('update_unread_badge', {
-        count: unreadConversationCount,
-        hasUnread: hasUnread
-      }).catch(err => {
-        console.error('[Messenger Desktop] Error updating unread badge:', err);
-      });
+      // If no conversations are muted, preserve existing behavior using title count if larger
+      if (mutedUnreadCount === 0 && titleUnreadCount > 0) {
+        finalBadgeCount = Math.max(finalBadgeCount, titleUnreadCount);
+        hasUnmutedUnread = true;
+      } else if (mutedUnreadCount > 0 && titleUnreadCount > 0) {
+        // If title count is available, subtract confirmed muted conversations from it
+        const titleAdjusted = Math.max(0, titleUnreadCount - mutedUnreadCount);
+        finalBadgeCount = Math.max(unmutedUnreadCount, titleAdjusted);
+        hasUnmutedUnread = finalBadgeCount > 0;
+      }
+
+      // 4. Check Chats tab counter if still zero and no conversations are known to be muted
+      if (finalBadgeCount === 0 && mutedUnreadCount === 0) {
+        const chatsTab = document.querySelector(SELECTORS.chatsTab);
+        if (chatsTab) {
+          const aria = (chatsTab.getAttribute('aria-label') || '').toLowerCase();
+          const numMatch = aria.match(/(\d+)\s*(?:unread|chưa đọc)/);
+          if (numMatch) {
+            const tabCount = parseInt(numMatch[1], 10);
+            if (!isNaN(tabCount) && tabCount > 0) {
+              finalBadgeCount = tabCount;
+              hasUnmutedUnread = true;
+            }
+          }
+        }
+      }
+
+      // If count is zero, never show an unread dot overlay
+      if (finalBadgeCount === 0) {
+        hasUnmutedUnread = false;
+      }
+
+      if (finalBadgeCount !== lastBadgeCount || hasUnmutedUnread !== lastHasUnread) {
+        lastBadgeCount = finalBadgeCount;
+        lastHasUnread = hasUnmutedUnread;
+
+        console.log(`[Messenger Desktop] Updating unread badge: count=${finalBadgeCount}, hasUnread=${hasUnmutedUnread} (unmuted=${unmutedUnreadCount}, muted=${mutedUnreadCount})`);
+        invoke('update_unread_badge', {
+          count: finalBadgeCount,
+          hasUnread: hasUnmutedUnread
+        }).catch(err => {
+          console.error('[Messenger Desktop] Error updating unread badge:', err);
+        });
+      }
+    } finally {
+      isUpdatingBadge = false;
     }
   }
 
