@@ -2,6 +2,7 @@ fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
             "notify_message",
+            "close_call_window",
             "update_unread_badge",
             "get_settings",
             "set_notifications_enabled",

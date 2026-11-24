@@ -16,6 +16,7 @@
     "notification:default",
     "updater:default",
     "allow-notify-message",
+    "allow-close-call-window",
     "allow-update-unread-badge",
     "allow-get-settings",
     "allow-set-notifications-enabled",

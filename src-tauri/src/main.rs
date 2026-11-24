@@ -17,6 +17,133 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
+#[tauri::command]
+fn close_call_window(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    label: Option<String>,
+) -> Result<(), String> {
+    let target_label = label.unwrap_or_else(|| window.label().to_string());
+    println!("[Messenger Desktop] close_call_window command received for target '{target_label}'");
+
+    if target_label.starts_with("call-") {
+        if let Some(call_win) = app.get_webview_window(&target_label) {
+            call_win
+                .close()
+                .map_err(|e| format!("Failed to close call window '{target_label}': {e}"))?;
+            println!("[Messenger Desktop] Successfully closed call window '{target_label}' via command");
+        } else {
+            eprintln!("[Messenger Desktop] Call window '{target_label}' not found");
+        }
+    } else {
+        eprintln!("[Messenger Desktop] Refusing to close non-call window '{target_label}'");
+    }
+
+    Ok(())
+}
+
+#[cfg(windows)]
+fn setup_call_window_close_handlers(window: &tauri::WebviewWindow) -> Result<(), String> {
+    let label = window.label().to_string();
+    let win_close = window.clone();
+    let win_msg = window.clone();
+
+    window
+        .with_webview(move |platform_webview| {
+            unsafe {
+                use webview2_com::{
+                    take_pwstr, WebMessageReceivedEventHandler, WindowCloseRequestedEventHandler,
+                };
+                use windows::core::PWSTR;
+
+                let controller = platform_webview.controller();
+                let core_webview = match controller.CoreWebView2() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!(
+                            "[Messenger Desktop] Failed to get CoreWebView2 for call window '{label}': {e}"
+                        );
+                        return;
+                    }
+                };
+
+                // 1. Intercept native WebView2 WindowCloseRequested (fired on window.close())
+                let close_target = win_close.clone();
+                let label_close = label.clone();
+                let close_handler = WindowCloseRequestedEventHandler::create(Box::new(
+                    move |_sender, _args| {
+                        println!(
+                            "[Messenger Desktop] Native WindowCloseRequested received for call window '{label_close}'"
+                        );
+                        if let Err(e) = close_target.close() {
+                            eprintln!(
+                                "[Messenger Desktop] Failed to close call window '{label_close}' on WindowCloseRequested: {e}"
+                            );
+                        } else {
+                            println!(
+                                "[Messenger Desktop] Successfully requested close for call window '{label_close}'"
+                            );
+                        }
+                        Ok(())
+                    },
+                ));
+                let mut close_token: i64 = 0;
+                if let Err(e) = core_webview.add_WindowCloseRequested(&close_handler, &mut close_token) {
+                    eprintln!(
+                        "[Messenger Desktop] Failed to register WindowCloseRequested on '{label}': {e}"
+                    );
+                } else {
+                    println!(
+                        "[Messenger Desktop] Registered WindowCloseRequested handler on call window '{label}'"
+                    );
+                }
+
+                // 2. Intercept WebView2 WebMessageReceived (postMessage bridge)
+                let msg_target = win_msg.clone();
+                let label_msg = label.clone();
+                let msg_handler = WebMessageReceivedEventHandler::create(Box::new(
+                    move |_sender, args| {
+                        let Some(args) = args else {
+                            return Ok(());
+                        };
+                        let mut msg_pwstr = PWSTR::null();
+                        if args.TryGetWebMessageAsString(&mut msg_pwstr).is_ok() {
+                            let msg = take_pwstr(msg_pwstr);
+                            if msg.contains("close_call_window") {
+                                println!(
+                                    "[Messenger Desktop] WebMessageReceived close request for call window '{label_msg}' (msg: {msg})"
+                                );
+                                if let Err(e) = msg_target.close() {
+                                    eprintln!(
+                                        "[Messenger Desktop] Failed to close call window '{label_msg}' on WebMessage: {e}"
+                                    );
+                                } else {
+                                    println!(
+                                        "[Messenger Desktop] Successfully closed call window '{label_msg}' via WebMessage"
+                                    );
+                                }
+                            }
+                        }
+                        Ok(())
+                    },
+                ));
+                let mut msg_token: i64 = 0;
+                if let Err(e) = core_webview.add_WebMessageReceived(&msg_handler, &mut msg_token) {
+                    eprintln!(
+                        "[Messenger Desktop] Failed to register WebMessageReceived on '{label}': {e}"
+                    );
+                } else {
+                    println!(
+                        "[Messenger Desktop] Registered WebMessageReceived handler on call window '{label}'"
+                    );
+                }
+            }
+        })
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 fn open_in_browser(url: &str) {
     if let Err(e) = tauri_plugin_opener::open_url(url, None::<&str>) {
         eprintln!("Failed to open default browser: {e}");
@@ -439,6 +566,7 @@ fn main() {
                         .additional_browser_args(
                             "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-renderer-backgrounding --disable-background-timer-throttling",
                         )
+                        .initialization_script(include_str!("call_inject.js"))
                         .on_document_title_changed(|w, title| {
                             if !title.is_empty() {
                                 let _ = w.set_title(&title);
@@ -482,6 +610,13 @@ fn main() {
 
                     match builder.build() {
                         Ok(call_window) => {
+                            #[cfg(windows)]
+                            if let Err(e) = setup_call_window_close_handlers(&call_window) {
+                                eprintln!(
+                                    "[Messenger Desktop] Failed to setup close handlers on call popup '{label}': {e}"
+                                );
+                            }
+
                             if let Err(e) =
                                 download::setup_webview_downloads(&call_window, app_handle_win.clone())
                             {
@@ -515,6 +650,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             notify_message,
+            close_call_window,
             update_unread_badge,
             get_settings,
             get_install_scope,
