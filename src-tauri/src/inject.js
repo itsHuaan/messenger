@@ -68,6 +68,9 @@
       '[title*="muted" i]',
       '[title*="tắt thông báo" i]',
       '[data-testid*="mute" i]',
+      '[data-testid*="bell-slash" i]',
+      'path[d^="M2.5 6c0-.322"]',
+      'path[d*="8.296 8.296A3.001"]',
       'path[d^="M29.676"]',
       'path[d*="29.676 7.746"]'
     ].join(','),
@@ -438,6 +441,50 @@
     return false;
   }
 
+  // Canonical bell-slash SVG path for muted conversations in Messenger (viewBox="0 0 16 16")
+  const MESSENGER_MUTED_PATH_16 = 'M2.5 6c0-.322.028-.637.081-.943l8.296 8.296A3.001 3.001 0 0 1 5 12.5H2.432a.98.98 0 0 1-.816-1.525A5.268 5.268 0 0 0 2.5 8.053V6zm4 6.5a1.5 1.5 0 0 0 3 0h-3zm7.06 0h.01a.98.98 0 0 0 .815-1.525 5.269 5.269 0 0 1-.885-2.922V6a5.5 5.5 0 0 0-9.83-3.39L2.28 1.22a.75.75 0 0 0-1.061 1.06l12.5 12.5a.75.75 0 0 0 1.06-1.06l-1.22-1.22z';
+
+  function normalizeSvgPath(d) {
+    if (!d || typeof d !== 'string') return '';
+    return d.trim().replace(/\s+/g, ' ');
+  }
+
+  function isMuteBellSvg(svg) {
+    if (!svg) return false;
+
+    // Check SVG aria-label if present
+    const svgAria = (svg.getAttribute('aria-label') || '').trim();
+    if (svgAria && isMuteLabel(svgAria)) return true;
+
+    // Check viewBox signal
+    const rawViewBox = svg.getAttribute('viewBox') || '';
+    const normViewBox = rawViewBox.trim().replace(/\s+/g, ' ');
+    const is16ViewBox = normViewBox === '0 0 16 16';
+
+    const paths = svg.querySelectorAll('path');
+    for (const p of paths) {
+      const normD = normalizeSvgPath(p.getAttribute('d'));
+      if (!normD) continue;
+
+      // 1. Exact match for Messenger 16x16 bell-slash SVG path
+      if (normD === MESSENGER_MUTED_PATH_16) {
+        return true;
+      }
+
+      // 2. Verified match with viewBox signal and key path segments
+      if (is16ViewBox && normD.startsWith('M2.5 6c0-.322') && normD.includes('8.296 8.296')) {
+        return true;
+      }
+
+      // 3. Fallback for alternative or legacy bell-slash icons
+      if (normD.startsWith('M29.676') || normD.includes('29.676 7.746')) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   function isConversationMuted(item) {
     if (!item) return false;
 
@@ -461,17 +508,24 @@
       return true;
     }
 
-    // 3. Priority 3: Inline SVG icon heuristic (bell-slash icon)
+    // 3. Priority 3: Inline SVG bell-slash icon detection
     const svgs = item.querySelectorAll('svg');
     for (const svg of svgs) {
-      const svgAria = svg.getAttribute('aria-label') || '';
-      if (isMuteLabel(svgAria)) return true;
-      const paths = svg.querySelectorAll('path');
-      for (const p of paths) {
-        const d = p.getAttribute('d') || '';
-        if (d.startsWith('M29.676') || d.includes('29.676 7.746')) {
+      if (isMuteBellSvg(svg)) return true;
+    }
+
+    const paths = item.querySelectorAll('path');
+    for (const p of paths) {
+      const normD = normalizeSvgPath(p.getAttribute('d'));
+      if (normD === MESSENGER_MUTED_PATH_16) return true;
+      if (normD.startsWith('M2.5 6c0-.322') && normD.includes('8.296 8.296')) {
+        const parentSvg = p.closest('svg');
+        if (!parentSvg || (parentSvg.getAttribute('viewBox') || '').trim().replace(/\s+/g, ' ') === '0 0 16 16') {
           return true;
         }
+      }
+      if (normD.startsWith('M29.676') || normD.includes('29.676 7.746')) {
+        return true;
       }
     }
 
@@ -501,50 +555,57 @@
   }
 
   function isCurrentConversationMuted(activeThreadId) {
-    // Check our cached mute state first
-    if (activeThreadId && mutedThreadIds.has(activeThreadId)) {
-      return mutedThreadIds.get(activeThreadId) === true;
+    if (!activeThreadId) return false;
+
+    // 1. Check conversation list item if visible in DOM (ground truth)
+    const items = document.querySelectorAll(SELECTORS.conversationItem);
+    for (const item of items) {
+      if (extractThreadId(item) === activeThreadId) {
+        const muted = isConversationMuted(item);
+        setThreadMuteState(activeThreadId, muted);
+        return muted;
+      }
     }
 
-    // Check the active conversation header for mute indicators
+    // 2. Check the active conversation header for mute indicators
     const header = document.querySelector('header, div[role="main"] header, [role="main"]');
     if (header) {
       const headerAria = (header.getAttribute('aria-label') || '').toLowerCase();
       for (const kw of MUTED_KEYWORDS) {
-        if (headerAria.includes(kw)) return true;
+        if (headerAria.includes(kw)) {
+          setThreadMuteState(activeThreadId, true);
+          return true;
+        }
       }
       if (header.querySelector(SELECTORS.muteIndicator)) {
+        setThreadMuteState(activeThreadId, true);
         return true;
+      }
+      const svgs = header.querySelectorAll('svg');
+      for (const svg of svgs) {
+        if (isMuteBellSvg(svg)) {
+          setThreadMuteState(activeThreadId, true);
+          return true;
+        }
       }
     }
 
-    // If we have no DOM evidence the conversation is muted, return false.
-    // This is the safe default for conversations whose mute state is unknown.
+    // 3. Fallback to cached mute state
+    if (mutedThreadIds.has(activeThreadId)) {
+      return mutedThreadIds.get(activeThreadId) === true;
+    }
+
     return false;
   }
 
   /**
    * Checks whether a thread is known to be muted.
    * Returns true if muted, false if confirmed not muted or unknown.
-   *
-   * Design decision: If mute state cannot be determined (thread not in cache
-   * and not in visible DOM), we return false to avoid silently dropping
-   * notifications. The user requirement says "if mute state cannot be
-   * determined reliably, avoid incorrectly treating the conversation as unmuted"
-   * — however, the alternative (treating unknown as muted) would suppress ALL
-   * notifications for newly visible conversations, which is worse UX.
-   * We mitigate this by persisting mute state and updating it whenever the
-   * conversation list item becomes visible.
    */
   function isThreadMuted(threadId) {
     if (!threadId) return false;
 
-    // Check the in-memory cache (populated from DOM + persisted state)
-    if (mutedThreadIds.has(threadId)) {
-      return mutedThreadIds.get(threadId) === true;
-    }
-
-    // Thread has never been seen — try to find it in the DOM now
+    // 1. If conversation row is currently visible in DOM, DOM is ground truth
     const items = document.querySelectorAll(SELECTORS.conversationItem);
     for (const item of items) {
       if (extractThreadId(item) === threadId) {
@@ -552,6 +613,11 @@
         setThreadMuteState(threadId, muted);
         return muted;
       }
+    }
+
+    // 2. If row is not currently visible in DOM (scrolled or virtualized), use cached state
+    if (mutedThreadIds.has(threadId)) {
+      return mutedThreadIds.get(threadId) === true;
     }
 
     // Unknown thread — cannot determine mute state.
@@ -572,8 +638,13 @@
     const muted = isConversationMuted(item);
     setThreadMuteState(threadId, muted);
 
-    // If muted, never fire notifications
+    // If muted, never fire notifications (but keep snippet updated to avoid backlog notify on unmute)
     if (muted) {
+      const snippet = extractSnippet(item);
+      if (snippet) {
+        threadSnippets.set(threadId, snippet);
+        savePersistedSnippets();
+      }
       return;
     }
 

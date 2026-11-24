@@ -186,9 +186,16 @@ function isMutedMock({ ariaLabel = '', childAriaLabels = [], svgPaths = [], snip
     return true;
   }
 
-  // 3. SVG bell-slash paths
+// 3. SVG bell-slash paths
   for (const p of svgPaths) {
-    if (p.startsWith('M29.676') || p.includes('29.676 7.746')) {
+    const norm = (typeof p === 'string' ? p : (p.d || '')).trim().replace(/\s+/g, ' ');
+    if (norm === 'M2.5 6c0-.322.028-.637.081-.943l8.296 8.296A3.001 3.001 0 0 1 5 12.5H2.432a.98.98 0 0 1-.816-1.525A5.268 5.268 0 0 0 2.5 8.053V6zm4 6.5a1.5 1.5 0 0 0 3 0h-3zm7.06 0h.01a.98.98 0 0 0 .815-1.525 5.269 5.269 0 0 1-.885-2.922V6a5.5 5.5 0 0 0-9.83-3.39L2.28 1.22a.75.75 0 0 0-1.061 1.06l12.5 12.5a.75.75 0 0 0 1.06-1.06l-1.22-1.22z') {
+      return true;
+    }
+    if (norm.startsWith('M2.5 6c0-.322') && norm.includes('8.296 8.296')) {
+      return true;
+    }
+    if (norm.startsWith('M29.676') || norm.includes('29.676 7.746')) {
       return true;
     }
   }
@@ -634,5 +641,226 @@ assert.strictEqual(unmutedArrival.notified, true, 'Unmuted thread must generate 
 assert.strictEqual(unmutedArrival.reason, 'new_unread_message');
 
 console.log('✓ Passed: Mute cache synchronization immediately updates storage and restores notifications on unmute');
+
+// ==========================================
+// Test 15: Exact Messenger 16x16 bell-slash SVG detection & multi-conversation notification filtering
+// ==========================================
+console.log('\nTest 15: Messenger 16x16 bell-slash SVG detection & multi-conversation notification filtering');
+
+const MESSENGER_MUTED_PATH_16 = 'M2.5 6c0-.322.028-.637.081-.943l8.296 8.296A3.001 3.001 0 0 1 5 12.5H2.432a.98.98 0 0 1-.816-1.525A5.268 5.268 0 0 0 2.5 8.053V6zm4 6.5a1.5 1.5 0 0 0 3 0h-3zm7.06 0h.01a.98.98 0 0 0 .815-1.525 5.269 5.269 0 0 1-.885-2.922V6a5.5 5.5 0 0 0-9.83-3.39L2.28 1.22a.75.75 0 0 0-1.061 1.06l12.5 12.5a.75.75 0 0 0 1.06-1.06l-1.22-1.22z';
+
+function normalizeSvgPath(d) {
+  if (!d || typeof d !== 'string') return '';
+  return d.trim().replace(/\s+/g, ' ');
+}
+
+function isMuteBellSvg(svg) {
+  if (!svg) return false;
+  const svgAria = (svg.getAttribute('aria-label') || '').trim();
+  if (svgAria && isMuteLabel(svgAria)) return true;
+
+  const rawViewBox = svg.getAttribute('viewBox') || '';
+  const normViewBox = rawViewBox.trim().replace(/\s+/g, ' ');
+  const is16ViewBox = normViewBox === '0 0 16 16';
+
+  const paths = svg.querySelectorAll ? svg.querySelectorAll('path') : (svg.paths || []);
+  for (const p of paths) {
+    const rawD = p.getAttribute ? p.getAttribute('d') : p.d;
+    const normD = normalizeSvgPath(rawD);
+    if (!normD) continue;
+
+    // 1. Exact match for Messenger 16x16 bell-slash SVG path
+    if (normD === MESSENGER_MUTED_PATH_16) {
+      return true;
+    }
+
+    // 2. Verified match with viewBox signal and key path segments
+    if (is16ViewBox && normD.startsWith('M2.5 6c0-.322') && normD.includes('8.296 8.296')) {
+      return true;
+    }
+
+    // 3. Fallback for alternative or legacy bell-slash icons
+    if (normD.startsWith('M29.676') || normD.includes('29.676 7.746')) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// 1. Test exact SVG recognition with attributes
+const exactMessengerSvg = {
+  getAttribute(name) {
+    if (name === 'viewBox') return '0 0 16 16';
+    if (name === 'width') return '16';
+    if (name === 'height') return '16';
+    if (name === 'fill') return 'currentColor';
+    if (name === 'aria-hidden') return 'true';
+    if (name === 'class') return 'x14rh7hd x1lliihq x1kpxq89'; // Generated class must be ignored
+    return null;
+  },
+  querySelectorAll(sel) {
+    if (sel === 'path') {
+      return [{
+        getAttribute(attr) {
+          if (attr === 'd') return MESSENGER_MUTED_PATH_16;
+          return null;
+        }
+      }];
+    }
+    return [];
+  }
+};
+
+assert.strictEqual(isMuteBellSvg(exactMessengerSvg), true, 'Exact Messenger bell-slash SVG must be recognized as mute');
+
+// 2. Test whitespace normalization in path and viewBox
+const whitespaceSvg = {
+  getAttribute(name) {
+    if (name === 'viewBox') return '  0   0   16   16  ';
+    return null;
+  },
+  querySelectorAll(sel) {
+    if (sel === 'path') {
+      return [{
+        getAttribute(attr) {
+          if (attr === 'd') {
+            return `\n  M2.5 6c0-.322.028-.637.081-.943l8.296   8.296A3.001 3.001 0 0 1 5 12.5H2.432a.98.98 0 0 1-.816-1.525A5.268 5.268 0 0 0 2.5 8.053V6zm4 6.5a1.5 1.5 0 0 0 3 0h-3zm7.06 0h.01a.98.98 0 0 0 .815-1.525 5.269 5.269 0 0 1-.885-2.922V6a5.5 5.5 0 0 0-9.83-3.39L2.28 1.22a.75.75 0 0 0-1.061 1.06l12.5 12.5a.75.75 0 0 0 1.06-1.06l-1.22-1.22z\t\n`;
+          }
+          return null;
+        }
+      }];
+    }
+    return [];
+  }
+};
+assert.strictEqual(isMuteBellSvg(whitespaceSvg), true, 'Whitespace normalized SVG must be recognized as mute');
+
+// 3. Test non-mute SVGs (e.g. checkmark, search icon, call icon) are NOT recognized as mute
+const searchIconSvg = {
+  getAttribute(name) {
+    if (name === 'viewBox') return '0 0 16 16';
+    return null;
+  },
+  querySelectorAll(sel) {
+    if (sel === 'path') {
+      return [{
+        getAttribute(attr) {
+          if (attr === 'd') return 'M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z';
+          return null;
+        }
+      }];
+    }
+    return [];
+  }
+};
+assert.strictEqual(isMuteBellSvg(searchIconSvg), false, 'Non-mute SVG must NOT be recognized as mute');
+
+// 4. Mock conversation rows and test row-level isolation
+function createMockRow({ threadId, title, snippet, isMuted, isUnread = true }) {
+  return {
+    threadId,
+    title,
+    snippet,
+    isMuted,
+    isUnread,
+    getAttribute(name) {
+      if (name === 'aria-label') return `${this.title}, ${this.snippet}`;
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector === 'svg') return this.isMuted ? [exactMessengerSvg] : [searchIconSvg];
+      if (selector === 'path') {
+        const svgs = this.querySelectorAll('svg');
+        const paths = [];
+        for (const s of svgs) {
+          paths.push(...s.querySelectorAll('path'));
+        }
+        return paths;
+      }
+      if (selector.includes('mute') || selector.includes('bell-slash')) return [];
+      if (selector.includes('unread')) return this.isUnread ? [{}] : [];
+      return [];
+    },
+    querySelector(selector) {
+      const all = this.querySelectorAll(selector);
+      return all.length > 0 ? all[0] : null;
+    }
+  };
+}
+
+function checkMockConversationMuted(row) {
+  const svgs = row.querySelectorAll('svg');
+  for (const s of svgs) {
+    if (isMuteBellSvg(s)) return true;
+  }
+  return false;
+}
+
+// Create Row A (muted) and Row B (unmuted)
+const rowA = createMockRow({ threadId: 'thread_muted_101', title: 'Work Announcements', snippet: 'Initial msg', isMuted: true, isUnread: true });
+const rowB = createMockRow({ threadId: 'thread_regular_102', title: 'Alice Bestie', snippet: 'Initial msg', isMuted: false, isUnread: true });
+
+assert.strictEqual(checkMockConversationMuted(rowA), true, 'Row A with bell-slash SVG must be identified as muted');
+assert.strictEqual(checkMockConversationMuted(rowB), false, 'Row B without bell-slash SVG must be identified as NOT muted');
+
+// 5. Test notification filtering on arrival
+const multiThreadSnippets = new Map();
+multiThreadSnippets.set('thread_muted_101', 'Initial msg');
+multiThreadSnippets.set('thread_regular_102', 'Initial msg');
+
+// New message arrives in muted conversation (Row A)
+const arrivalMuted = simulateConversationArrival({
+  isInitialized: true,
+  threadId: rowA.threadId,
+  snippet: 'New company announcement @everyone',
+  threadSnippets: multiThreadSnippets,
+  isUnread: true,
+  isMuted: checkMockConversationMuted(rowA),
+  elapsedSinceStart: 10000
+});
+assert.strictEqual(arrivalMuted.notified, false, 'Muted conversation containing SVG must suppress notification');
+assert.strictEqual(arrivalMuted.reason, 'muted');
+
+// New message arrives in unmuted conversation (Row B)
+const arrivalUnmuted = simulateConversationArrival({
+  isInitialized: true,
+  threadId: rowB.threadId,
+  snippet: 'Hey! Want to grab lunch?',
+  threadSnippets: multiThreadSnippets,
+  isUnread: true,
+  isMuted: checkMockConversationMuted(rowB),
+  elapsedSinceStart: 10000
+});
+assert.strictEqual(arrivalUnmuted.notified, true, 'Ordinary conversation must generate desktop notification');
+assert.strictEqual(arrivalUnmuted.reason, 'new_unread_message');
+
+// 6. Test that one muted conversation does not affect another conversation
+assert.notStrictEqual(arrivalMuted.notified, arrivalUnmuted.notified, 'Muted conversation must not affect notifications of unmuted conversation');
+
+// 7. Test unmuting Row A immediately restores notifications
+rowA.isMuted = false; // User unmuted conversation in Messenger (SVG removed from DOM row)
+assert.strictEqual(checkMockConversationMuted(rowA), false, 'Row A without SVG must immediately be detected as unmuted');
+
+const arrivalAfterUnmute = simulateConversationArrival({
+  isInitialized: true,
+  threadId: rowA.threadId,
+  snippet: 'Follow-up announcement after unmute',
+  threadSnippets: multiThreadSnippets,
+  isUnread: true,
+  isMuted: checkMockConversationMuted(rowA),
+  elapsedSinceStart: 12000
+});
+assert.strictEqual(arrivalAfterUnmute.notified, true, 'Unmuting must immediately restore notifications on subsequent messages');
+assert.strictEqual(arrivalAfterUnmute.reason, 'new_unread_message');
+
+// 8. Test unread badge counts include muted unread conversations
+const unreadStateTest = [
+  { threadId: 'thread_muted_101', isUnread: true, isMuted: true },
+  { threadId: 'thread_regular_102', isUnread: true, isMuted: false }
+];
+assert.strictEqual(computeUnreadBadgeCount(unreadStateTest), 2, 'Unread badge must count all unread messages including muted conversations');
+
+console.log('✓ Passed: Exact bell-slash SVG recognized, notification suppression/restoration verified, badge counts preserved');
 
 console.log('\nAll frontend logic tests passed successfully!');
