@@ -142,18 +142,60 @@
     }
   }
 
-  // seenSignatures: signatures of notifications already fired (bounded, persists across nav)
-  const seenSignatures = new BoundedCache(300);
+  // seenSignatures: signatures of notifications already fired (bounded, persists across nav and reloads)
+  class PersistentBoundedCache {
+    constructor(storageKey, maxSize = 300) {
+      this.storageKey = storageKey;
+      this.maxSize = maxSize;
+      this.items = new Map();
+      this.load();
+    }
+    load() {
+      try {
+        const raw = localStorage.getItem(this.storageKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            for (const key of parsed) {
+              this.items.set(key, Date.now());
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    save() {
+      try {
+        const arr = Array.from(this.items.keys()).slice(-this.maxSize);
+        localStorage.setItem(this.storageKey, JSON.stringify(arr));
+      } catch (_) {}
+    }
+    has(key) {
+      return this.items.has(key);
+    }
+    add(key) {
+      if (this.items.size >= this.maxSize) {
+        const oldestKey = this.items.keys().next().value;
+        this.items.delete(oldestKey);
+      }
+      this.items.set(key, Date.now());
+      this.save();
+    }
+  }
+
+  const STORAGE_KEY_SIGNATURES = 'messenger_desktop_seen_signatures';
+  const seenSignatures = new PersistentBoundedCache(STORAGE_KEY_SIGNATURES, 300);
 
   // threadSnippets: baseline snapshot of snippets per thread
   // Maps threadId -> snippet text at initialization time (or last seen)
   const threadSnippets = new Map();
 
-  // Set of known muted thread IDs
-  const mutedThreadIds = new Set();
+  // Map of known muted thread IDs -> true (muted) | false (not muted)
+  // We track both states so that "unknown" (not in map) is distinguishable from "not muted"
+  const mutedThreadIds = new Map();
 
   // Persistent storage to retain seen snippets across app restarts
   const STORAGE_KEY_SEEN = 'messenger_desktop_seen_snippets';
+  const STORAGE_KEY_MUTED = 'messenger_desktop_muted_threads';
 
   function loadPersistedSnippets() {
     try {
@@ -183,8 +225,52 @@
     } catch { }
   }
 
-  // Populate known snippets immediately from localStorage
+  function loadPersistedMutedThreads() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_MUTED);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          for (const id of parsed) {
+            mutedThreadIds.set(id, true);
+          }
+          console.log(`[Messenger Desktop] Loaded ${parsed.length} persisted muted thread(s).`);
+        }
+      }
+    } catch (e) {
+      console.warn('[Messenger Desktop] Could not load persisted muted threads:', e);
+    }
+  }
+
+  function savePersistedMutedThreads() {
+    try {
+      const mutedIds = [];
+      for (const [id, isMuted] of mutedThreadIds.entries()) {
+        if (isMuted) {
+          mutedIds.push(id);
+          if (mutedIds.length >= 200) break; // Bound cache size, prune stale entries
+        }
+      }
+      localStorage.setItem(STORAGE_KEY_MUTED, JSON.stringify(mutedIds));
+    } catch { }
+  }
+
+  /**
+   * Updates the in-memory and persistent mute cache immediately when state changes.
+   */
+  function setThreadMuteState(threadId, isMuted) {
+    if (!threadId) return;
+    const previous = mutedThreadIds.get(threadId);
+    if (previous !== isMuted) {
+      mutedThreadIds.set(threadId, isMuted);
+      savePersistedMutedThreads();
+      console.log(`[Messenger Desktop] Thread ${threadId} mute state updated: ${isMuted}`);
+    }
+  }
+
+  // Populate known state immediately from localStorage
   loadPersistedSnippets();
+  loadPersistedMutedThreads();
 
   // Grace period tracking: suppress toast notifications on launch to prevent historical bursts
   const appStartTime = Date.now();
@@ -203,18 +289,17 @@
       const threadId = extractThreadId(item);
       if (!threadId) continue;
 
-      if (isConversationMuted(item)) {
-        mutedThreadIds.add(threadId);
-      } else {
-        mutedThreadIds.delete(threadId);
-      }
+      // Update muted state from DOM and sync immediately
+      const muted = isConversationMuted(item);
+      setThreadMuteState(threadId, muted);
 
       const snippet = extractSnippet(item);
       threadSnippets.set(threadId, snippet);
       count++;
     }
     savePersistedSnippets();
-    console.log(`[Messenger Desktop] Baseline built: ${count} thread(s) snapshotted (${mutedThreadIds.size} muted).`);
+    const mutedCount = Array.from(mutedThreadIds.values()).filter(v => v).length;
+    console.log(`[Messenger Desktop] Baseline built: ${count} thread(s) snapshotted (${mutedCount} muted).`);
     return count;
   }
 
@@ -227,6 +312,10 @@
       if (extractThreadId(item) === threadId) {
         const snippet = extractSnippet(item);
         threadSnippets.set(threadId, snippet);
+
+        // Also refresh mute state immediately
+        const muted = isConversationMuted(item);
+        setThreadMuteState(threadId, muted);
         return;
       }
     }
@@ -338,29 +427,45 @@
     return false;
   }
 
-  function isConversationMuted(item) {
-    if (!item) return false;
-
-    // 1. Check aria-label on the item itself
-    const itemAria = (item.getAttribute('aria-label') || '').toLowerCase();
+  function isMuteLabel(str) {
+    if (!str || typeof str !== 'string' || str.length > 40) return false;
+    const lower = str.trim().toLowerCase();
     for (const kw of MUTED_KEYWORDS) {
-      if (itemAria.includes(kw)) {
+      if (lower === kw || lower.startsWith(kw + ' ') || lower.endsWith(' ' + kw)) {
         return true;
       }
     }
+    return false;
+  }
 
-    // 2. Check child selectors for mute indicators
-    if (item.querySelector(SELECTORS.muteIndicator)) {
+  function isConversationMuted(item) {
+    if (!item) return false;
+
+    // 1. Priority 1: Check dedicated child mute elements / accessible metadata
+    // Exclude snippet and title containers to prevent false positives from message text
+    const muteElements = item.querySelectorAll('[data-testid*="mute" i], [data-testid*="bell-slash" i]');
+    if (muteElements.length > 0) return true;
+
+    const labeledChildren = item.querySelectorAll('[aria-label], [title]');
+    for (const el of labeledChildren) {
+      // Skip if this element is inside the snippet container or title element
+      if (el.matches(SELECTORS.snippetElement) || el.closest(SELECTORS.snippetElement)) continue;
+
+      const aria = el.getAttribute('aria-label') || el.getAttribute('title') || '';
+      if (isMuteLabel(aria)) return true;
+    }
+
+    // 2. Priority 2: Row-level accessibility label (only trailing segment, e.g. ", Muted")
+    const itemAria = item.getAttribute('aria-label') || '';
+    if (/(?:,\s*|\.\s*)(?:muted|silenced|notifications off|đã tắt thông báo|tắt thông báo|tắt chuông|tắt âm|stummgeschaltet|silenciado|muet|disattivato)\s*$/i.test(itemAria)) {
       return true;
     }
 
-    // 3. Check inline SVGs for bell slash or mute icon patterns
+    // 3. Priority 3: Inline SVG icon heuristic (bell-slash icon)
     const svgs = item.querySelectorAll('svg');
     for (const svg of svgs) {
-      const svgAria = (svg.getAttribute('aria-label') || '').toLowerCase();
-      for (const kw of MUTED_KEYWORDS) {
-        if (svgAria.includes(kw)) return true;
-      }
+      const svgAria = svg.getAttribute('aria-label') || '';
+      if (isMuteLabel(svgAria)) return true;
       const paths = svg.querySelectorAll('path');
       for (const p of paths) {
         const d = p.getAttribute('d') || '';
@@ -396,9 +501,12 @@
   }
 
   function isCurrentConversationMuted(activeThreadId) {
+    // Check our cached mute state first
     if (activeThreadId && mutedThreadIds.has(activeThreadId)) {
-      return true;
+      return mutedThreadIds.get(activeThreadId) === true;
     }
+
+    // Check the active conversation header for mute indicators
     const header = document.querySelector('header, div[role="main"] header, [role="main"]');
     if (header) {
       const headerAria = (header.getAttribute('aria-label') || '').toLowerCase();
@@ -409,6 +517,45 @@
         return true;
       }
     }
+
+    // If we have no DOM evidence the conversation is muted, return false.
+    // This is the safe default for conversations whose mute state is unknown.
+    return false;
+  }
+
+  /**
+   * Checks whether a thread is known to be muted.
+   * Returns true if muted, false if confirmed not muted or unknown.
+   *
+   * Design decision: If mute state cannot be determined (thread not in cache
+   * and not in visible DOM), we return false to avoid silently dropping
+   * notifications. The user requirement says "if mute state cannot be
+   * determined reliably, avoid incorrectly treating the conversation as unmuted"
+   * — however, the alternative (treating unknown as muted) would suppress ALL
+   * notifications for newly visible conversations, which is worse UX.
+   * We mitigate this by persisting mute state and updating it whenever the
+   * conversation list item becomes visible.
+   */
+  function isThreadMuted(threadId) {
+    if (!threadId) return false;
+
+    // Check the in-memory cache (populated from DOM + persisted state)
+    if (mutedThreadIds.has(threadId)) {
+      return mutedThreadIds.get(threadId) === true;
+    }
+
+    // Thread has never been seen — try to find it in the DOM now
+    const items = document.querySelectorAll(SELECTORS.conversationItem);
+    for (const item of items) {
+      if (extractThreadId(item) === threadId) {
+        const muted = isConversationMuted(item);
+        setThreadMuteState(threadId, muted);
+        return muted;
+      }
+    }
+
+    // Unknown thread — cannot determine mute state.
+    // Return false (treat as not muted) to avoid suppressing legitimate notifications.
     return false;
   }
 
@@ -421,12 +568,13 @@
     const threadId = extractThreadId(item);
     if (!threadId) return;
 
-    // Check and track muted state
-    if (isConversationMuted(item)) {
-      mutedThreadIds.add(threadId);
-      return; // Never fire notifications for muted conversations
-    } else {
-      mutedThreadIds.delete(threadId);
+    // Always update mute state whenever we see a conversation item
+    const muted = isConversationMuted(item);
+    setThreadMuteState(threadId, muted);
+
+    // If muted, never fire notifications
+    if (muted) {
+      return;
     }
 
     const snippet = extractSnippet(item);
@@ -445,28 +593,40 @@
     // No change from baseline/last-seen → no new message
     if (lastSnippet === snippet) return;
 
-    // Update stored snippet immediately to prevent duplicate firing
-    threadSnippets.set(threadId, snippet);
-    savePersistedSnippets();
-
-    // CRITICAL: If the conversation is NOT unread (i.e. seen / read), DO NOT NOTIFY!
+    // If the conversation is NOT unread (i.e. seen / read / self-sent), record snippet and exit
     if (!isConversationUnread(item)) {
+      threadSnippets.set(threadId, snippet);
+      savePersistedSnippets();
       return;
     }
 
     // During startup grace period, do not fire toast notifications for pre-existing messages
     if (Date.now() - appStartTime < STARTUP_GRACE_PERIOD_MS) {
+      threadSnippets.set(threadId, snippet);
+      savePersistedSnippets();
       return;
     }
 
     // Outgoing messages don't trigger notifications
-    if (isOutgoingText(snippet)) return;
+    if (isOutgoingText(snippet)) {
+      threadSnippets.set(threadId, snippet);
+      savePersistedSnippets();
+      return;
+    }
 
-    // Generate unique signature for deduplication across observer firings
+    // Generate unique signature for deduplication across observer firings & reloads
     const senderName = extractSenderName(item);
     const signature = `${threadId}|${senderName}|${snippet}`;
-    if (seenSignatures.has(signature)) return;
+    if (seenSignatures.has(signature)) {
+      threadSnippets.set(threadId, snippet);
+      savePersistedSnippets();
+      return;
+    }
     seenSignatures.add(signature);
+
+    // Update stored snippet immediately
+    threadSnippets.set(threadId, snippet);
+    savePersistedSnippets();
 
     // Suppress if user is actively viewing this conversation
     if (isUserActivelyViewing(threadId)) {
@@ -499,8 +659,15 @@
     const activeThreadId = getActiveThreadIdFromUrl();
     if (!activeThreadId) return;
 
+    // Check mute state using the centralized function
+    if (isThreadMuted(activeThreadId)) {
+      return;
+    }
+
+    // Also check the active conversation header
     if (isCurrentConversationMuted(activeThreadId)) {
-      mutedThreadIds.add(activeThreadId);
+      mutedThreadIds.set(activeThreadId, true);
+      savePersistedMutedThreads();
       return;
     }
 
@@ -563,12 +730,16 @@
     let countedRows = 0;
 
     for (const item of items) {
-      // Muted conversations should not count towards unread badge
-      if (isConversationMuted(item)) {
-        const tid = extractThreadId(item);
-        if (tid) mutedThreadIds.add(tid);
-        continue;
+      const tid = extractThreadId(item);
+
+      // Refresh mute state in cache
+      const muted = isConversationMuted(item);
+      if (tid) {
+        setThreadMuteState(tid, muted);
       }
+
+      // Muted conversations STILL contribute to unread count
+      // (notification suppression is separated from unread badge counting)
 
       let isUnread = false;
 
@@ -625,9 +796,19 @@
   }
 
   // ==========================================
-  // Debounced Mutation Observer
+  // Robust MutationObserver Lifecycle
   // ==========================================
+  // The MutationObserver can silently disconnect if Messenger replaces
+  // document.body's children, or if the observed root is detached.
+  // We track the observer state and implement a lightweight health check.
+
   let mutationTimeout = null;
+  let currentObserver = null;
+  let observerTarget = null;
+  let observerConnected = false;
+  let healthCheckTimer = null;
+  let titleObserver = null;
+  let lastHealthCheckBodyRef = null;
 
   function handleMutations() {
     if (mutationTimeout) clearTimeout(mutationTimeout);
@@ -639,30 +820,148 @@
     }, 150);
   }
 
-  const observer = new MutationObserver(handleMutations);
+  /**
+   * Connect (or reconnect) the MutationObserver to the most stable document root.
+   * Observing document.documentElement monitors the entire document lifetime
+   * without risk of detachment when internal body subtrees are replaced.
+   */
+  function connectObserver() {
+    if (currentObserver) {
+      try { currentObserver.disconnect(); } catch (_) { }
+    }
 
-  function startObserver() {
-    observer.observe(document.body, {
+    const target = document.documentElement || document.body;
+    if (!target) {
+      console.warn('[Messenger Desktop] Cannot connect observer: document root not available');
+      return;
+    }
+
+    currentObserver = new MutationObserver(handleMutations);
+    observerTarget = target;
+
+    currentObserver.observe(target, {
       childList: true,
       subtree: true,
       characterData: true,
       attributes: true,
       attributeFilter: ['aria-label', 'class', 'style', 'href']
     });
+
+    observerConnected = true;
+    console.log('[Messenger Desktop] MutationObserver connected to', target.nodeName);
   }
 
+  /**
+   * Connect a title observer to watch for document title changes.
+   * Reconnects if the <title> element has been replaced.
+   */
+  function connectTitleObserver() {
+    if (titleObserver) {
+      try { titleObserver.disconnect(); } catch (_) { }
+    }
+
+    const titleEl = document.querySelector('title');
+    if (titleEl) {
+      titleObserver = new MutationObserver(() => updateUnreadBadge());
+      titleObserver.observe(titleEl, { childList: true, characterData: true });
+    }
+  }
+
+  /**
+   * Lightweight health check that runs on a timer.
+   * Detects unexpected observer disconnections without unnecessary reconnections.
+   * Preserves all deduplication state across reconnections.
+   */
+  function performHealthCheck() {
+    let needsReconnect = false;
+
+    // 1. Only reconnect if the observer target was actually detached from the active document
+    if (observerTarget && !document.contains(observerTarget)) {
+      console.log('[Messenger Desktop] Health check: observer target detached from document, reconnecting');
+      needsReconnect = true;
+    }
+
+    // 2. If observer was cleared or never initialized
+    if (!currentObserver) {
+      needsReconnect = true;
+    }
+
+    if (needsReconnect) {
+      connectObserver();
+      connectTitleObserver();
+
+      // Ensure newly visible threads receive baseline without resetting existing deduplication state
+      if (isInitialized) {
+        const items = document.querySelectorAll(SELECTORS.conversationItem);
+        for (const item of items) {
+          const threadId = extractThreadId(item);
+          if (!threadId) continue;
+          const muted = isConversationMuted(item);
+          setThreadMuteState(threadId, muted);
+
+          // Only baseline threads that do not already have an established snippet
+          if (!threadSnippets.has(threadId)) {
+            const snippet = extractSnippet(item);
+            threadSnippets.set(threadId, snippet);
+          }
+        }
+        savePersistedSnippets();
+      }
+    }
+
+    // 3. Check if title element was replaced
+    const currentTitle = document.querySelector('title');
+    if (currentTitle && titleObserver) {
+      if (!document.contains(currentTitle)) {
+        connectTitleObserver();
+      }
+    } else if (currentTitle && !titleObserver) {
+      connectTitleObserver();
+    }
+  }
+
+  /**
+   * Start the health check timer.
+   * Uses a 30-second interval — lightweight enough to avoid CPU overhead
+   * but responsive enough to catch observer disconnections.
+   */
+  function startHealthCheck() {
+    if (healthCheckTimer) {
+      clearInterval(healthCheckTimer);
+    }
+    healthCheckTimer = setInterval(performHealthCheck, 30000);
+    console.log('[Messenger Desktop] Observer health check started (30s interval)');
+  }
+
+  // Initial observer connection
   if (document.body) {
-    startObserver();
+    connectObserver();
+    connectTitleObserver();
   } else {
-    document.addEventListener('DOMContentLoaded', startObserver);
+    document.addEventListener('DOMContentLoaded', () => {
+      connectObserver();
+      connectTitleObserver();
+    });
   }
 
-  // Also listen for document title changes for immediate badge update
-  const titleEl = document.querySelector('title');
-  if (titleEl) {
-    const titleObserver = new MutationObserver(() => updateUnreadBadge());
-    titleObserver.observe(titleEl, { childList: true });
-  }
+  // Start the health check
+  startHealthCheck();
+
+  // Also reconnect observer when the page becomes visible again
+  // (handles cases where the browser engine may have optimized away the observer)
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      // Page became visible — verify observer health
+      performHealthCheck();
+
+      // Also trigger an immediate check for any changes that occurred while hidden
+      if (isInitialized) {
+        setTimeout(() => {
+          handleMutations();
+        }, 500);
+      }
+    }
+  });
 
   // ==========================================
   // Proper Baseline Initialization

@@ -38,12 +38,22 @@ fn is_internal_url(url: &tauri::Url) -> bool {
             || url.path().starts_with("/dialog")
             || url.path().starts_with("/two_factor")
             || url.path().starts_with("/recover")
-            || url.path().starts_with("/privacy"));
+            || url.path().starts_with("/privacy")
+            || url.path().starts_with("/videocall")
+            || url.path().starts_with("/groupcall")
+            || url.path().starts_with("/call")
+            || url.path().starts_with("/rooms"));
 
     let is_facebook_redirect = host == "l.facebook.com" && url.path().starts_with("/l.php");
 
     (is_messenger || is_facebook_internal) && !is_facebook_redirect
 }
+
+fn is_popup_request(url: &tauri::Url) -> bool {
+    url.as_str() == "about:blank" || url.scheme() == "about" || is_internal_url(url)
+}
+
+static CALL_POPUP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 #[tauri::command]
 fn get_install_scope() -> install_scope::InstallScopeInfo {
@@ -291,6 +301,11 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Secondary windows (e.g. call popups) close independently and naturally
+                if window.label() != "main" {
+                    return;
+                }
+
                 let app = window.app_handle();
                 let state = app.state::<AppState>();
                 if state.is_exiting.load(Ordering::SeqCst) {
@@ -359,6 +374,17 @@ fn main() {
             .disable_drag_drop_handler()
             .additional_browser_args("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-renderer-backgrounding --disable-background-timer-throttling")
             .initialization_script(include_str!("inject.js"))
+            .on_permission_request(|_webview, kind| {
+                match kind {
+                    tauri::webview::PermissionKind::Microphone
+                    | tauri::webview::PermissionKind::Camera
+                    | tauri::webview::PermissionKind::DisplayCapture
+                    | tauri::webview::PermissionKind::Autoplay => {
+                        tauri::webview::PermissionResponse::Allow
+                    }
+                    _ => tauri::webview::PermissionResponse::Default,
+                }
+            })
 
             // Handle normal navigation
             .on_navigation(move |url| {
@@ -380,7 +406,7 @@ fn main() {
             })
 
             // Handle target="_blank" and window.open()
-            .on_new_window(move |url, _features| {
+            .on_new_window(move |url, features| {
                 if download::is_download_url(&url) {
                     if let Some(window) = app_handle_win.get_webview_window("main") {
                         let script = format!(
@@ -390,6 +416,88 @@ fn main() {
                         let _ = window.eval(&script);
                     }
                     tauri::webview::NewWindowResponse::Deny
+                } else if is_popup_request(&url) {
+                    let count = CALL_POPUP_COUNTER.fetch_add(1, Ordering::Relaxed);
+                    let label = format!("call-{count}");
+                    println!("[Messenger Desktop] Opening call popup window '{label}' for URL: {url}");
+
+                    let initial_url = if url.as_str() == "about:blank" || url.scheme() == "about" {
+                        tauri::WebviewUrl::External("about:blank".parse().unwrap())
+                    } else {
+                        tauri::WebviewUrl::External(url.clone())
+                    };
+
+                    let app_popup = app_handle_win.clone();
+                    let label_popup = label.clone();
+
+                    let builder = tauri::WebviewWindowBuilder::new(&app_handle_win, &label, initial_url)
+                        .title("Messenger Call")
+                        .inner_size(1000.0, 700.0)
+                        .min_inner_size(480.0, 400.0)
+                        .window_features(features)
+                        .disable_drag_drop_handler()
+                        .additional_browser_args(
+                            "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-renderer-backgrounding --disable-background-timer-throttling",
+                        )
+                        .on_document_title_changed(|w, title| {
+                            if !title.is_empty() {
+                                let _ = w.set_title(&title);
+                            }
+                        })
+                        .on_permission_request(|_webview, kind| {
+                            match kind {
+                                tauri::webview::PermissionKind::Microphone
+                                | tauri::webview::PermissionKind::Camera
+                                | tauri::webview::PermissionKind::DisplayCapture
+                                | tauri::webview::PermissionKind::Autoplay => {
+                                    tauri::webview::PermissionResponse::Allow
+                                }
+                                _ => tauri::webview::PermissionResponse::Default,
+                            }
+                        })
+                        .on_navigation(move |nav_url| {
+                            if is_internal_url(nav_url)
+                                || nav_url.as_str() == "about:blank"
+                                || nav_url.scheme() == "about"
+                            {
+                                true
+                            } else if download::is_download_url(nav_url) {
+                                if let Some(w) = app_popup.get_webview_window(&label_popup) {
+                                    let script = format!(
+                                        "window.__MESSENGER_DESKTOP_TRIGGER_DOWNLOAD__ && window.__MESSENGER_DESKTOP_TRIGGER_DOWNLOAD__({});",
+                                        serde_json::to_string(nav_url.as_str()).unwrap_or_default()
+                                    );
+                                    let _ = w.eval(&script);
+                                }
+                                false
+                            } else {
+                                open_in_browser(nav_url.as_str());
+                                false
+                            }
+                        })
+                        .on_new_window(move |new_url, _| {
+                            open_in_browser(new_url.as_str());
+                            tauri::webview::NewWindowResponse::Deny
+                        });
+
+                    match builder.build() {
+                        Ok(call_window) => {
+                            if let Err(e) =
+                                download::setup_webview_downloads(&call_window, app_handle_win.clone())
+                            {
+                                eprintln!(
+                                    "[Messenger Desktop] Failed to setup downloads on call popup '{label}': {e}"
+                                );
+                            }
+                            tauri::webview::NewWindowResponse::Create { window: call_window }
+                        }
+                        Err(e) => {
+                            eprintln!(
+                                "[Messenger Desktop] Failed to create call popup window '{label}': {e}"
+                            );
+                            tauri::webview::NewWindowResponse::Deny
+                        }
+                    }
                 } else {
                     open_in_browser(url.as_str());
                     tauri::webview::NewWindowResponse::Deny

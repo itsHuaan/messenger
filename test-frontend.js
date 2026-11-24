@@ -148,7 +148,7 @@ for (const msg of diverseMessages) {
 console.log('✓ Passed: All diverse message formats handled gracefully');
 
 // Test 7: Muted conversation detection logic
-console.log('Test 7: Muted conversation detection');
+console.log('Test 7: Muted conversation detection & false-positive prevention');
 const MUTED_KEYWORDS = [
   'muted',
   'tắt thông báo',
@@ -163,17 +163,30 @@ const MUTED_KEYWORDS = [
   'disattivato'
 ];
 
-function isMutedMock({ ariaLabel = '', childAriaLabels = [], svgPaths = [] }) {
-  const lowerAria = ariaLabel.toLowerCase();
+function isMuteLabel(str) {
+  if (!str || typeof str !== 'string' || str.length > 40) return false;
+  const lower = str.trim().toLowerCase();
   for (const kw of MUTED_KEYWORDS) {
-    if (lowerAria.includes(kw)) return true;
-  }
-  for (const childAria of childAriaLabels) {
-    const l = childAria.toLowerCase();
-    for (const kw of MUTED_KEYWORDS) {
-      if (l.includes(kw)) return true;
+    if (lower === kw || lower.startsWith(kw + ' ') || lower.endsWith(' ' + kw)) {
+      return true;
     }
   }
+  return false;
+}
+
+function isMutedMock({ ariaLabel = '', childAriaLabels = [], svgPaths = [], snippetText = '' }) {
+  // 1. Dedicated child badges (not snippet)
+  for (const childAria of childAriaLabels) {
+    if (childAria === snippetText) continue; // skip message snippet
+    if (isMuteLabel(childAria)) return true;
+  }
+
+  // 2. Row aria-label trailing segment
+  if (/(?:,\s*|\.\s*)(?:muted|silenced|notifications off|đã tắt thông báo|tắt thông báo|tắt chuông|tắt âm|stummgeschaltet|silenciado|muet|disattivato)\s*$/i.test(ariaLabel)) {
+    return true;
+  }
+
+  // 3. SVG bell-slash paths
   for (const p of svgPaths) {
     if (p.startsWith('M29.676') || p.includes('29.676 7.746')) {
       return true;
@@ -187,7 +200,15 @@ assert.strictEqual(isMutedMock({ ariaLabel: 'Gia đình, Đã tắt thông báo'
 assert.strictEqual(isMutedMock({ childAriaLabels: ['Notifications off'] }), true);
 assert.strictEqual(isMutedMock({ svgPaths: ['M29.676 7.746c.353-.352...'] }), true);
 assert.strictEqual(isMutedMock({ ariaLabel: 'Alice Smith, 1 unread message' }), false);
-console.log('✓ Passed: Muted conversations properly identified across languages and SVG paths');
+
+// False positive prevention: message preview text says "I have muted the stream"
+const falsePositiveRow = {
+  ariaLabel: 'Alice Smith, I have muted the video, 10:15 AM',
+  childAriaLabels: ['I have muted the video'],
+  snippetText: 'I have muted the video'
+};
+assert.strictEqual(isMutedMock(falsePositiveRow), false, 'Message containing "muted" must NOT falsely mark conversation as muted');
+console.log('✓ Passed: Muted conversations properly identified, false positives on message text prevented');
 
 // Test 8: Seen conversation suppression on app restart / virtual list mount
 console.log('Test 8: Seen conversation suppression on startup / list mount');
@@ -537,5 +558,81 @@ assert.strictEqual(determineTrayClickAction(false, false), 'restore_and_focus', 
 assert.strictEqual(determineTrayClickAction(true, true), 'restore_and_focus', 'Clicking tray when minimized must restore and focus');
 
 console.log('✓ Passed: System tray settings defaults, dependency hierarchy, and toggle behaviors verified');
+
+// Test 13: Unread badge counts include muted conversations
+console.log('Test 13: Unread badge counts include muted unread conversations');
+
+function computeUnreadBadgeCount(conversations) {
+  let count = 0;
+  for (const c of conversations) {
+    if (c.isUnread) count++;
+  }
+  return count;
+}
+
+const convos = [
+  { threadId: '1', isUnread: true, isMuted: true },  // muted but unread -> MUST count!
+  { threadId: '2', isUnread: true, isMuted: false }, // unmuted and unread -> MUST count!
+  { threadId: '3', isUnread: false, isMuted: false },
+  { threadId: '4', isUnread: false, isMuted: true }
+];
+
+assert.strictEqual(computeUnreadBadgeCount(convos), 2, 'Unread badge must count all unread conversations including muted ones');
+console.log('✓ Passed: Unread badge correctly counts muted unread conversations');
+
+// Test 14: Mute/Unmute state synchronization & notification re-enabling
+console.log('Test 14: Mute cache synchronization and re-enabling notifications upon unmute');
+
+const mockMuteCache = new Map();
+let persistedMuted = [];
+
+function setMuteState(threadId, isMuted) {
+  const prev = mockMuteCache.get(threadId);
+  if (prev !== isMuted) {
+    mockMuteCache.set(threadId, isMuted);
+    persistedMuted = Array.from(mockMuteCache.entries())
+      .filter(([_, muted]) => muted)
+      .map(([id]) => id);
+  }
+}
+
+// User mutes thread_99
+mockThreadSnippets.set('thread_99', 'Old baseline message');
+setMuteState('thread_99', true);
+assert.strictEqual(mockMuteCache.get('thread_99'), true);
+assert.deepStrictEqual(persistedMuted, ['thread_99']);
+
+// Incoming message while muted -> must suppress
+const mutedArrival = simulateConversationArrival({
+  isInitialized: true,
+  threadId: 'thread_99',
+  snippet: 'Message while muted',
+  threadSnippets: mockThreadSnippets,
+  isUnread: true,
+  isMuted: mockMuteCache.get('thread_99'),
+  elapsedSinceStart: 10000
+});
+assert.strictEqual(mutedArrival.notified, false);
+assert.strictEqual(mutedArrival.reason, 'muted');
+
+// User now un-mutes thread_99 in Messenger
+setMuteState('thread_99', false);
+assert.strictEqual(mockMuteCache.get('thread_99'), false);
+assert.deepStrictEqual(persistedMuted, [], 'Persisted muted list must immediately remove unmuted thread');
+
+// New incoming message after un-muting -> MUST notify!
+const unmutedArrival = simulateConversationArrival({
+  isInitialized: true,
+  threadId: 'thread_99',
+  snippet: 'Message after unmute!',
+  threadSnippets: mockThreadSnippets,
+  isUnread: true,
+  isMuted: mockMuteCache.get('thread_99'),
+  elapsedSinceStart: 12000
+});
+assert.strictEqual(unmutedArrival.notified, true, 'Unmuted thread must generate notifications again');
+assert.strictEqual(unmutedArrival.reason, 'new_unread_message');
+
+console.log('✓ Passed: Mute cache synchronization immediately updates storage and restores notifications on unmute');
 
 console.log('\nAll frontend logic tests passed successfully!');
