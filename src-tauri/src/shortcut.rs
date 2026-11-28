@@ -300,7 +300,17 @@ pub fn paths_match(a: &Path, b: &Path) -> bool {
             return true;
         }
     }
-    a.to_string_lossy().eq_ignore_ascii_case(&b.to_string_lossy())
+    let s_a = a.to_string_lossy();
+    let s_b = b.to_string_lossy();
+    let clean_a = s_a
+        .strip_prefix(r"\\?\")
+        .unwrap_or(&s_a)
+        .trim_end_matches(['\\', '/']);
+    let clean_b = s_b
+        .strip_prefix(r"\\?\")
+        .unwrap_or(&s_b)
+        .trim_end_matches(['\\', '/']);
+    clean_a.eq_ignore_ascii_case(clean_b)
 }
 
 /// Performs safe, idempotent shortcut maintenance:
@@ -309,6 +319,13 @@ pub fn paths_match(a: &Path, b: &Path) -> bool {
 /// - Duplicate shortcuts with casing differences (e.g., `messenger.lnk` vs `Messenger.lnk`) are cleaned up.
 /// - Windows Startup registry entry is synced with `current_exe` if startup integration is active.
 pub fn maintain_shortcuts() -> Result<(), String> {
+    // 0. Only perform shortcut maintenance when running as the installed production application.
+    // Development builds and uninstalled binaries must NEVER modify, overwrite, or repair production shortcuts.
+    if !crate::install_scope::is_installed_production_context() {
+        println!("[Shortcuts] Skipping shortcut maintenance: not running in an installed production context.");
+        return Ok(());
+    }
+
     let current_exe = match std::env::current_exe() {
         Ok(p) => p,
         Err(e) => return Err(format!("Could not determine current executable path: {e}")),
@@ -321,18 +338,18 @@ pub fn maintain_shortcuts() -> Result<(), String> {
 
     let icon_path = &current_exe;
 
-    // 1. Maintain Start Menu Shortcut
+    // 1. Maintain Start Menu Shortcut (REPAIR ONLY IF EXISTS - do not blindly recreate on startup)
     let start_menu_candidates = get_start_menu_shortcut_paths();
     let preferred_start_menu = start_menu_candidates
         .first()
         .cloned()
         .ok_or_else(|| "Could not determine Start Menu directory".to_string())?;
 
-    let mut found_start_menu = false;
     for sm_path in &start_menu_candidates {
         if sm_path.exists() {
-            found_start_menu = true;
-            let needs_update = match inspect_shortcut(sm_path) {
+            let target_dest = &preferred_start_menu;
+            let current_details = inspect_shortcut(sm_path);
+            let needs_update = match &current_details {
                 Some(details) => {
                     !paths_match(&details.target_path, &current_exe)
                         || !paths_match(&details.working_dir, &working_dir)
@@ -341,42 +358,35 @@ pub fn maintain_shortcuts() -> Result<(), String> {
                 None => true,
             };
 
-            if needs_update || sm_path != &preferred_start_menu {
+            if needs_update || sm_path != target_dest {
                 println!(
                     "[Shortcuts] Repairing Start Menu shortcut: {}",
-                    preferred_start_menu.display()
+                    target_dest.display()
                 );
+                let arguments = current_details
+                    .as_ref()
+                    .and_then(|d| if d.arguments.is_empty() { None } else { Some(d.arguments.as_str()) });
+                let shortcut_icon = current_details
+                    .as_ref()
+                    .map(|d| d.icon_location.0.as_path())
+                    .filter(|p| p.exists())
+                    .unwrap_or(icon_path);
+
                 write_shortcut(
-                    &preferred_start_menu,
+                    target_dest,
                     &current_exe,
                     &working_dir,
-                    icon_path,
-                    None,
+                    shortcut_icon,
+                    arguments,
                     Some(APP_NAME),
                     Some(APP_USER_MODEL_ID),
                 )?;
-                if sm_path != &preferred_start_menu && sm_path.exists() {
+                if sm_path != target_dest && sm_path.exists() {
                     let _ = std::fs::remove_file(sm_path);
                 }
             }
             break;
         }
-    }
-
-    if !found_start_menu {
-        println!(
-            "[Shortcuts] Creating missing Start Menu shortcut: {}",
-            preferred_start_menu.display()
-        );
-        write_shortcut(
-            &preferred_start_menu,
-            &current_exe,
-            &working_dir,
-            icon_path,
-            None,
-            Some(APP_NAME),
-            Some(APP_USER_MODEL_ID),
-        )?;
     }
 
     // 2. Maintain Desktop Shortcut (UPDATE ONLY IF EXISTS)
@@ -386,7 +396,8 @@ pub fn maintain_shortcuts() -> Result<(), String> {
     for dt_path in &desktop_candidates {
         if dt_path.exists() {
             let target_dest = preferred_desktop.as_ref().unwrap_or(dt_path);
-            let needs_update = match inspect_shortcut(dt_path) {
+            let current_details = inspect_shortcut(dt_path);
+            let needs_update = match &current_details {
                 Some(details) => {
                     !paths_match(&details.target_path, &current_exe)
                         || !paths_match(&details.working_dir, &working_dir)
@@ -400,12 +411,21 @@ pub fn maintain_shortcuts() -> Result<(), String> {
                     "[Shortcuts] Repairing existing Desktop shortcut: {}",
                     target_dest.display()
                 );
+                let arguments = current_details
+                    .as_ref()
+                    .and_then(|d| if d.arguments.is_empty() { None } else { Some(d.arguments.as_str()) });
+                let shortcut_icon = current_details
+                    .as_ref()
+                    .map(|d| d.icon_location.0.as_path())
+                    .filter(|p| p.exists())
+                    .unwrap_or(icon_path);
+
                 write_shortcut(
                     target_dest,
                     &current_exe,
                     &working_dir,
-                    icon_path,
-                    None,
+                    shortcut_icon,
+                    arguments,
                     Some(APP_NAME),
                     Some(APP_USER_MODEL_ID),
                 )?;
@@ -438,6 +458,20 @@ mod tests {
             Path::new(r"C:\Program Files\messenger\messenger.exe"),
             Path::new(r"c:\program files\messenger\messenger.exe")
         ));
+    }
+
+    #[test]
+    fn test_paths_match_trailing_slashes_and_prefix() {
+        assert!(paths_match(
+            Path::new(r"\\?\C:\Users\Admins\AppData\Local\messenger\"),
+            Path::new(r"c:\users\admins\appdata\local\messenger")
+        ));
+    }
+
+    #[test]
+    fn test_maintain_shortcuts_skips_in_non_production_context() {
+        // In debug / dev test environment, maintain_shortcuts must safely return Ok without error
+        assert!(maintain_shortcuts().is_ok());
     }
 
     #[test]

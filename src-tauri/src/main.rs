@@ -484,7 +484,7 @@ fn main() {
             notification::register_app_identity(app.handle());
 
             let initial_settings = settings::load_settings(app.handle());
-            if initial_settings.run_at_startup {
+            if initial_settings.run_at_startup && install_scope::is_installed_production_context() {
                 if let Err(e) = startup::set_run_at_startup(true) {
                     eprintln!("[Messenger Desktop] Failed to sync startup registry key: {e}");
                 }

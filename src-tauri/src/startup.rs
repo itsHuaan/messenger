@@ -17,6 +17,11 @@ pub fn format_startup_command(raw_path: &str) -> String {
 pub fn set_run_at_startup(enabled: bool) -> Result<(), String> {
     #[cfg(windows)]
     {
+        if !crate::install_scope::is_installed_production_context() {
+            println!("[Messenger Desktop] Skipping startup registry update: not running in an installed production context.");
+            return Ok(());
+        }
+
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
         let (run_key, _) = hkcu
             .create_subkey(REG_RUN_KEY)

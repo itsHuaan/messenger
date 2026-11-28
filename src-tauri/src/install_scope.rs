@@ -225,6 +225,39 @@ pub fn detect_install_scope() -> InstallScopeInfo {
     }
 }
 
+/// Helper to evaluate whether a given scope and dev flag represent an installed production context.
+#[allow(dead_code)]
+pub fn is_production_context_for(scope: &InstallScope, is_dev_mode: bool) -> bool {
+    !is_dev_mode && matches!(scope, InstallScope::UserScope | InstallScope::MachineScope)
+}
+
+/// Determines whether the currently running process is executing as the installed
+/// production application in an appropriate installation context.
+///
+/// Returns `false` if:
+/// - The build is a debug/development build (`cfg!(debug_assertions)`).
+/// - The application is running under Tauri development mode (`tauri::is_dev()`).
+/// - The running executable path does not match the registered installation directory
+///   in the Windows registry (HKCU or HKLM).
+///
+/// This ensures development builds, test binaries, and portable instances NEVER
+/// modify, overwrite, or repair shortcuts or registry entries belonging to the
+/// installed production application.
+pub fn is_installed_production_context() -> bool {
+    #[cfg(debug_assertions)]
+    {
+        false
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        if tauri::is_dev() {
+            return false;
+        }
+        let info = detect_install_scope();
+        is_production_context_for(&info.scope, false)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -271,5 +304,21 @@ mod tests {
         assert!(json.contains("\"USER_SCOPE\""));
         let deserialized: InstallScopeInfo = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.scope, InstallScope::UserScope);
+    }
+
+    #[test]
+    fn test_is_production_context_for() {
+        assert!(is_production_context_for(&InstallScope::UserScope, false));
+        assert!(is_production_context_for(&InstallScope::MachineScope, false));
+        assert!(!is_production_context_for(&InstallScope::Unknown, false));
+        assert!(!is_production_context_for(&InstallScope::UserScope, true));
+        assert!(!is_production_context_for(&InstallScope::MachineScope, true));
+        assert!(!is_production_context_for(&InstallScope::Unknown, true));
+    }
+
+    #[test]
+    fn test_is_installed_production_context_in_debug() {
+        // Debug builds (like test runners) must never be considered installed production context
+        assert!(!is_installed_production_context());
     }
 }

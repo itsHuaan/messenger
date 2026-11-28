@@ -94,7 +94,14 @@ pub fn register_app_identity(app: &AppHandle) {
         let _ = SetCurrentProcessExplicitAppUserModelID(w!("com.itshuaan.messenger"));
     }
 
-    // 2. Register AppUserModelID in HKCU registry
+    // 2. Only perform registry identity updates and shortcut maintenance in an installed production context.
+    // Development builds must never modify production registry entries or shortcuts.
+    if !crate::install_scope::is_installed_production_context() {
+        println!("[Shortcuts] Skipping identity registry update and shortcut maintenance: not in installed production context.");
+        return;
+    }
+
+    // Register AppUserModelID in HKCU registry
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let subkey_path = format!(r"SOFTWARE\Classes\AppUserModelId\{APP_ID}");
     if let Ok((key, _)) = hkcu.create_subkey(&subkey_path) {
