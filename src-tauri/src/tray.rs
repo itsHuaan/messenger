@@ -7,6 +7,35 @@ use tauri::{
 
 pub const TRAY_ID: &str = "main-tray";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CloseBehavior {
+    Hide,
+    Exit,
+}
+
+pub fn determine_close_behavior(minimize_to_tray: bool) -> CloseBehavior {
+    if minimize_to_tray {
+        CloseBehavior::Hide
+    } else {
+        CloseBehavior::Exit
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrayAction {
+    Create,
+    Remove,
+    None,
+}
+
+pub fn determine_tray_action(current_enabled: bool, new_enabled: bool) -> TrayAction {
+    match (current_enabled, new_enabled) {
+        (false, true) => TrayAction::Create,
+        (true, false) => TrayAction::Remove,
+        _ => TrayAction::None,
+    }
+}
+
 pub fn restore_and_focus(window: &WebviewWindow) {
     let _ = window.unminimize();
     let _ = window.show();
@@ -34,18 +63,35 @@ pub fn trigger_manual_updater(app: &AppHandle) {
     }
 }
 
+pub fn has_tray(app: &AppHandle) -> bool {
+    let id = TrayIconId::new(TRAY_ID);
+    app.tray_by_id(&id).is_some()
+}
+
+pub fn remove_tray(app: &AppHandle) {
+    let id = TrayIconId::new(TRAY_ID);
+    if let Some(_tray) = app.remove_tray_by_id(&id) {
+        println!("[Messenger Desktop] System tray icon removed.");
+    }
+}
+
 pub fn exit_application(app: &AppHandle) {
-    println!("[Messenger Desktop] Application exit requested from tray menu.");
+    println!("[Messenger Desktop] Application exit requested.");
     let state = app.state::<crate::AppState>();
     state.is_exiting.store(true, Ordering::SeqCst);
 
     // Clean up tray icon so no dangling tray icon remains on Windows taskbar
-    let _ = app.remove_tray_by_id(&TrayIconId::new(TRAY_ID));
+    remove_tray(app);
 
     app.exit(0);
 }
 
 pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    if has_tray(app) {
+        println!("[Messenger Desktop] System tray icon '{TRAY_ID}' already exists, skipping duplicate creation.");
+        return Ok(());
+    }
+
     // 1. Resolve application icon for the tray
     let icon = app.default_window_icon().cloned().or_else(|| {
         tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png")).ok()
@@ -71,6 +117,11 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
     builder
         .on_menu_event(|app, event| {
+            let state = app.state::<crate::AppState>();
+            if state.is_exiting.load(Ordering::SeqCst) {
+                return;
+            }
+
             match event.id.as_ref() {
                 "open_messenger" => {
                     if let Some(window) = app.get_webview_window("main") {
@@ -92,13 +143,18 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             }
         })
         .on_tray_icon_event(|tray, event| {
+            let app = tray.app_handle();
+            let state = app.state::<crate::AppState>();
+            if state.is_exiting.load(Ordering::SeqCst) {
+                return;
+            }
+
             match event {
                 TrayIconEvent::Click {
                     button: MouseButton::Left,
                     button_state: MouseButtonState::Up,
                     ..
                 } => {
-                    let app = tray.app_handle();
                     if let Some(window) = app.get_webview_window("main") {
                         toggle_window_visibility(&window);
                     }
@@ -107,7 +163,6 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                     button: MouseButton::Left,
                     ..
                 } => {
-                    let app = tray.app_handle();
                     if let Some(window) = app.get_webview_window("main") {
                         restore_and_focus(&window);
                     }
@@ -119,4 +174,34 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
     println!("[Messenger Desktop] System tray initialized successfully.");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tray_id_constant() {
+        assert_eq!(TRAY_ID, "main-tray");
+    }
+
+    #[test]
+    fn test_close_behavior_decision() {
+        // When minimize to tray is enabled -> hide window
+        assert_eq!(determine_close_behavior(true), CloseBehavior::Hide);
+        // When minimize to tray is disabled -> exit application
+        assert_eq!(determine_close_behavior(false), CloseBehavior::Exit);
+    }
+
+    #[test]
+    fn test_tray_lifecycle_action() {
+        // Transition from false to true -> Create tray
+        assert_eq!(determine_tray_action(false, true), TrayAction::Create);
+        // Transition from true to false -> Remove tray
+        assert_eq!(determine_tray_action(true, false), TrayAction::Remove);
+        // Already enabled and staying enabled -> None
+        assert_eq!(determine_tray_action(true, true), TrayAction::None);
+        // Already disabled and staying disabled -> None
+        assert_eq!(determine_tray_action(false, false), TrayAction::None);
+    }
 }

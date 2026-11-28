@@ -316,10 +316,31 @@ fn set_run_at_startup(app: tauri::AppHandle, enabled: bool) -> Result<AppSetting
 #[tauri::command]
 fn set_minimize_to_tray(app: tauri::AppHandle, enabled: bool) -> Result<AppSettings, String> {
     let state = app.state::<AppState>();
-    let mut settings = state.settings.lock().map_err(|e| e.to_string())?;
-    settings.minimize_to_tray = enabled;
-    settings::save_settings(&app, &settings)?;
-    println!("[Messenger Desktop] Minimize to tray set to: {enabled}");
+    let previous_enabled = {
+        let mut settings = state.settings.lock().map_err(|e| e.to_string())?;
+        let prev = settings.minimize_to_tray;
+        settings.minimize_to_tray = enabled;
+        settings::save_settings(&app, &settings)?;
+        println!("[Messenger Desktop] Minimize to tray set to: {enabled}");
+        prev
+    };
+
+    // Dynamically manage system tray lifecycle:
+    // When enabled, create/show tray icon (avoiding duplicates).
+    // When disabled, immediately remove tray icon.
+    match tray::determine_tray_action(previous_enabled, enabled) {
+        tray::TrayAction::Create => {
+            if let Err(e) = tray::setup_tray(&app) {
+                eprintln!("[Messenger Desktop] Failed to re-initialize system tray: {e}");
+            }
+        }
+        tray::TrayAction::Remove => {
+            tray::remove_tray(&app);
+        }
+        tray::TrayAction::None => {}
+    }
+
+    let settings = state.settings.lock().map_err(|e| e.to_string())?;
     Ok(settings.clone())
 }
 
@@ -445,13 +466,16 @@ fn main() {
                     .map(|s| s.minimize_to_tray)
                     .unwrap_or(true);
 
-                if minimize_to_tray {
-                    api.prevent_close();
-                    let _ = window.hide();
-                    println!("[Messenger Desktop] Window hidden to system tray on close request.");
-                } else {
-                    println!("[Messenger Desktop] Terminating application on window close (Minimize to Tray disabled).");
-                    tray::exit_application(app);
+                match tray::determine_close_behavior(minimize_to_tray) {
+                    tray::CloseBehavior::Hide => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                        println!("[Messenger Desktop] Window hidden to system tray on close request.");
+                    }
+                    tray::CloseBehavior::Exit => {
+                        println!("[Messenger Desktop] Terminating application on window close (Minimize to Tray disabled).");
+                        tray::exit_application(app);
+                    }
                 }
             }
         })
@@ -472,9 +496,13 @@ fn main() {
             app.manage(Arc::new(updater::UpdateManager::new()));
             app.manage(download::DownloadManager::new());
 
-            // Initialize Windows System Tray
-            if let Err(e) = tray::setup_tray(app.handle()) {
-                eprintln!("[Messenger Desktop] Failed to setup system tray: {e}");
+            // Initialize Windows System Tray only if minimize_to_tray is enabled
+            if initial_settings.minimize_to_tray {
+                if let Err(e) = tray::setup_tray(app.handle()) {
+                    eprintln!("[Messenger Desktop] Failed to setup system tray: {e}");
+                }
+            } else {
+                println!("[Messenger Desktop] Minimize to tray is disabled; skipping system tray setup.");
             }
 
             let app_handle_nav = app.handle().clone();

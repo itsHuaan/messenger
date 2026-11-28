@@ -7,6 +7,8 @@ pub mod notification;
 pub mod settings;
 pub mod shortcut;
 pub mod startup;
+pub mod tray;
+pub mod updater;
 
 pub use settings::AppState;
 

@@ -6,7 +6,7 @@ use tauri_plugin_updater::UpdaterExt;
 
 /// Generates a clean UTC ISO-style timestamp using only standard library
 pub fn current_timestamp() -> String {
-    chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+    chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -318,6 +318,7 @@ pub async fn install_and_restart(app: AppHandle) -> Result<(), String> {
     }
 
     println!("[Updater] Silent installer launched. Exiting application to allow update replacement.");
+    crate::tray::remove_tray(&app);
     app.exit(0);
 
     Ok(())

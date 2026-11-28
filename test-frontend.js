@@ -564,6 +564,102 @@ assert.strictEqual(determineTrayClickAction(true, false), 'hide', 'Clicking tray
 assert.strictEqual(determineTrayClickAction(false, false), 'restore_and_focus', 'Clicking tray when hidden must restore and focus');
 assert.strictEqual(determineTrayClickAction(true, true), 'restore_and_focus', 'Clicking tray when minimized must restore and focus');
 
+// Dynamic Tray Lifecycle Simulation
+class MockTrayManager {
+  constructor(initialMinimizeToTray) {
+    this.minimizeToTray = initialMinimizeToTray;
+    this.isTrayCreated = false;
+    this.isWindowVisible = true;
+    this.isExited = false;
+
+    // Startup lifecycle: tray created only if minimize_to_tray is enabled
+    if (this.minimizeToTray) {
+      this.createTray();
+    }
+  }
+
+  createTray() {
+    if (this.isTrayCreated) {
+      return false; // prevent duplicate
+    }
+    this.isTrayCreated = true;
+    return true;
+  }
+
+  removeTray() {
+    if (!this.isTrayCreated) {
+      return false;
+    }
+    this.isTrayCreated = false;
+    return true;
+  }
+
+  setMinimizeToTray(enabled) {
+    this.minimizeToTray = enabled;
+    if (enabled) {
+      this.createTray();
+    } else {
+      this.removeTray();
+    }
+  }
+
+  handleCloseRequest() {
+    if (this.minimizeToTray) {
+      this.isWindowVisible = false;
+      return 'hide';
+    } else {
+      this.exitApplication();
+      return 'exit';
+    }
+  }
+
+  exitApplication() {
+    this.removeTray();
+    this.isExited = true;
+  }
+}
+
+// Scenario 1: Fresh launch with setting disabled -> no tray icon
+const mockAppDisabled = new MockTrayManager(false);
+assert.strictEqual(mockAppDisabled.isTrayCreated, false, 'Scenario 1: Fresh launch with disabled setting must not create tray');
+
+// Scenario 2: Enable setting -> tray icon appears, no duplicate
+mockAppDisabled.setMinimizeToTray(true);
+assert.strictEqual(mockAppDisabled.isTrayCreated, true, 'Scenario 2: Enabling setting must create tray icon');
+assert.strictEqual(mockAppDisabled.createTray(), false, 'Scenario 2: Redundant creation must not duplicate tray icon');
+
+// Scenario 3: Close main window -> application hides, tray icon remains
+const closeActionEnabled = mockAppDisabled.handleCloseRequest();
+assert.strictEqual(closeActionEnabled, 'hide', 'Scenario 3: Close request when enabled must hide window');
+assert.strictEqual(mockAppDisabled.isWindowVisible, false);
+assert.strictEqual(mockAppDisabled.isTrayCreated, true, 'Scenario 3: Tray icon must remain visible when hidden');
+
+// Scenario 4: Restore from tray -> main window appears
+mockAppDisabled.isWindowVisible = true; // restore
+assert.strictEqual(mockAppDisabled.isWindowVisible, true, 'Scenario 4: Window is restored');
+
+// Scenario 5: Select Exit -> process terminates and tray icon disappears
+mockAppDisabled.exitApplication();
+assert.strictEqual(mockAppDisabled.isExited, true, 'Scenario 5: Process terminated');
+assert.strictEqual(mockAppDisabled.isTrayCreated, false, 'Scenario 5: Tray icon removed on exit');
+
+// Scenario 6: Disable setting while running -> tray icon disappears
+const mockAppRunning = new MockTrayManager(true);
+assert.strictEqual(mockAppRunning.isTrayCreated, true, 'App starts with tray');
+mockAppRunning.setMinimizeToTray(false);
+assert.strictEqual(mockAppRunning.isTrayCreated, false, 'Scenario 6: Disabling setting must immediately remove tray icon');
+
+// Scenario 7: Close main window when disabled -> application exits completely
+const closeActionDisabled = mockAppRunning.handleCloseRequest();
+assert.strictEqual(closeActionDisabled, 'exit', 'Scenario 7: Close request when disabled must exit completely');
+assert.strictEqual(mockAppRunning.isExited, true, 'Scenario 7: App is marked exited');
+assert.strictEqual(mockAppRunning.isTrayCreated, false, 'Scenario 7: No tray icon remains');
+
+// Scenario 8: Restart application with disabled setting -> saved setting respected
+const mockAppRestarted = new MockTrayManager(mockAppRunning.minimizeToTray);
+assert.strictEqual(mockAppRestarted.minimizeToTray, false);
+assert.strictEqual(mockAppRestarted.isTrayCreated, false, 'Scenario 8: Restarted app respects disabled setting with no tray');
+
 console.log('✓ Passed: System tray settings defaults, dependency hierarchy, and toggle behaviors verified');
 
 // Test 13: Taskbar unread badge calculation excludes muted conversations
